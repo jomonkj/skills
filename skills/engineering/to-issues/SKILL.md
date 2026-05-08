@@ -14,18 +14,18 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 **Sandcastle labels (for AFK slices destined for the fleet orchestrator):**
 
 - `Sandcastle` — opts the issue into the sandcastle fleet
-- `difficulty/easy` — trivial change (typo, single-line tweak, simple config)
-- `difficulty/medium` — standard slice (default; 1–3 hours of work, single layer or two)
-- `difficulty/hard` — design-heavy or cross-layer (multi-domain reasoning, new abstractions)
+- `difficulty:easy` — trivial change (typo, single-line tweak, simple config)
+- `difficulty:medium` — standard slice (default; 1–3 hours of work, single layer or two)
+- `difficulty:hard` — design-heavy or cross-layer (multi-domain reasoning, new abstractions)
 - `need-agent-review` — force a separate Opus reviewer pass after implementation (use sparingly; reserve for security-sensitive or architecture-defining slices)
 
 If sandcastle labels are missing in the target repo, create them first:
 
 ```bash
 gh label create Sandcastle --color 1D76DB --description "Issues processed by the sandcastle fleet orchestrator"
-gh label create difficulty/easy --color C2E0C6
-gh label create difficulty/medium --color FBCA04
-gh label create difficulty/hard --color D93F0B
+gh label create difficulty:easy --color C2E0C6
+gh label create difficulty:medium --color FBCA04
+gh label create difficulty:hard --color D93F0B
 gh label create need-agent-review --color 5319E7
 ```
 
@@ -93,7 +93,7 @@ Iterate until the user approves the breakdown.
 
 ### 6. Publish the issues to the issue tracker
 
-For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. AFK slices destined for the sandcastle fleet must include the `Sandcastle` label plus exactly one `difficulty/*` label and optionally `need-agent-review`.
+For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. AFK slices destined for the sandcastle fleet must include the `Sandcastle` label plus exactly one `difficulty:*` label and optionally `need-agent-review`.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
 
@@ -103,7 +103,7 @@ Example for an AFK sandcastle-destined slice:
 gh issue create \
   --title "Slice N — <title>" \
   --label "Sandcastle" \
-  --label "difficulty/medium" \
+  --label "difficulty:medium" \
   --body "$(cat <<'EOF'
 ... issue body ...
 EOF

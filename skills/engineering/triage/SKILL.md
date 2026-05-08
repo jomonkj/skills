@@ -42,7 +42,7 @@ Every triaged issue should carry exactly one category role and one state role. I
 **Sandcastle labels (apply when transitioning to `ready-for-agent` AND the issue should be picked up by the sandcastle fleet):**
 
 - `Sandcastle` — opt into fleet processing
-- `difficulty/easy` | `difficulty/medium` | `difficulty/hard` — exactly one
+- `difficulty:easy` | `difficulty:medium` | `difficulty:hard` — exactly one
 - `need-agent-review` — optional, for security-sensitive or design-defining issues
 
 Difficulty heuristic when triaging an incoming issue:
