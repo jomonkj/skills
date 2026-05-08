@@ -1,0 +1,14 @@
+{
+  "name": "yolo-skills",
+  "owner": {
+    "name": "Jomon Johnson"
+  },
+  "plugins": [
+    {
+      "name": "yolo-skills",
+      "source": "./",
+      "description": "Engineering and productivity skills for YOLO workspace",
+      "version": "0.1.0"
+    }
+  ]
+}
