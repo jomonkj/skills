@@ -11,6 +11,24 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 **Triage labels (canonical, hardcoded):** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. If a label is missing in the target repo, run `gh label create <name>` first, then apply.
 
+**Sandcastle labels (for AFK slices destined for the fleet orchestrator):**
+
+- `Sandcastle` — opts the issue into the sandcastle fleet
+- `difficulty/easy` — trivial change (typo, single-line tweak, simple config)
+- `difficulty/medium` — standard slice (default; 1–3 hours of work, single layer or two)
+- `difficulty/hard` — design-heavy or cross-layer (multi-domain reasoning, new abstractions)
+- `need-agent-review` — force a separate Opus reviewer pass after implementation (use sparingly; reserve for security-sensitive or architecture-defining slices)
+
+If sandcastle labels are missing in the target repo, create them first:
+
+```bash
+gh label create Sandcastle --color 1D76DB --description "Issues processed by the sandcastle fleet orchestrator"
+gh label create difficulty/easy --color C2E0C6
+gh label create difficulty/medium --color FBCA04
+gh label create difficulty/hard --color D93F0B
+gh label create need-agent-review --color 5319E7
+```
+
 ## Process
 
 ### 1. Gather context
@@ -33,12 +51,34 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 - Prefer many thin slices over few thick ones
 </vertical-slice-rules>
 
-### 4. Quiz the user
+### 4. Classify difficulty (AFK slices only)
+
+For each AFK slice, classify difficulty using these heuristics:
+
+| Difficulty | When |
+|---|---|
+| `easy` | Single-file edit, < 50 lines, no design judgment, deterministic outcome |
+| `medium` | 1-2 hour task, 1-3 files, standard pattern reuse, **default for most slices** |
+| `hard` | Design-defining, multi-file, cross-domain, new abstractions, security-sensitive, schema migrations |
+
+Add `need-agent-review` to a slice when **any** of these apply:
+
+- Touches authentication, authorization, secrets, or payment paths
+- Introduces a new domain abstraction
+- Changes public API surface
+- Changes a database schema
+- The slice description explicitly says "review carefully"
+
+When in doubt, leave `need-agent-review` off and rely on the slice's tests.
+
+### 5. Quiz the user
 
 Present the proposed breakdown as a numbered list. For each slice, show:
 
 - **Title**: short descriptive name
 - **Type**: HITL / AFK
+- **Difficulty**: easy / medium / hard (AFK only)
+- **Review**: `need-agent-review` if applied
 - **Blocked by**: which other slices (if any) must complete first
 - **User stories covered**: which user stories this addresses (if the source material has them)
 
@@ -51,11 +91,26 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Publish the issues to the issue tracker
+### 6. Publish the issues to the issue tracker
 
-For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. These issues are considered ready for AFK agents, so publish them with the correct triage label unless instructed otherwise.
+For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. AFK slices destined for the sandcastle fleet must include the `Sandcastle` label plus exactly one `difficulty/*` label and optionally `need-agent-review`.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
+
+Example for an AFK sandcastle-destined slice:
+
+```bash
+gh issue create \
+  --title "Slice N — <title>" \
+  --label "Sandcastle" \
+  --label "difficulty/medium" \
+  --body "$(cat <<'EOF'
+... issue body ...
+EOF
+)"
+```
+
+Add `--label need-agent-review` if the slice meets the review criteria from step 4.
 
 <issue-template>
 ## Parent
