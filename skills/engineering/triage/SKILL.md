@@ -35,7 +35,9 @@ Five **state** roles:
 
 Every triaged issue should carry exactly one category role and one state role. If state roles conflict, flag it and ask the maintainer before doing anything else.
 
-These are canonical role names — the actual label strings used in the issue tracker may differ. The mapping should have been provided to you - run `/setup-yolo-skills` if not.
+**Issue tracker:** GitHub via the `gh` CLI. Repo = `git remote get-url origin` of the current working directory.
+
+**Labels (hardcoded):** apply the role name directly as the label string (no remap). Before applying any label, check `gh label list` — if the label is missing, run `gh label create <name>` first, then apply.
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 

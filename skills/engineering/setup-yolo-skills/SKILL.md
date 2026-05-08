@@ -1,121 +1,103 @@
 ---
 name: setup-yolo-skills
-description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` so the engineering skills know this repo's issue tracker (GitHub or local markdown), triage label vocabulary, and domain doc layout. Run before first use of `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out` — or if those skills appear to be missing context about the issue tracker, triage labels, or domain docs.
+description: One-time scaffold for a repo so the engineering skills (triage, to-issues, to-prd, diagnose, tdd, improve-codebase-architecture) have what they need. Creates the 5 canonical triage labels in the GitHub repo, an empty CONTEXT.md, and a docs/adr/ template if any are missing. Idempotent — skips anything already present. Run once per new repo.
 disable-model-invocation: true
 ---
 
-# Setup Matt Pocock's Skills
+# Setup Yolo Skills
 
-Scaffold the per-repo configuration that the engineering skills assume:
+Scaffold the prerequisites for the engineering skills. Rules are hardcoded in those skills — this command only creates the files and labels they expect.
 
-- **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
-- **Triage labels** — the strings used for the five canonical triage roles
-- **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
+## What gets created
 
-This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
+1. **Triage labels** — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` in the current repo's GitHub Issues
+2. **`CONTEXT.md`** — empty domain glossary at repo root (single-context default)
+3. **`docs/adr/0001-record-architecture-decisions.md`** — ADR template
+
+Multi-context repos: skip `CONTEXT.md` step and create `CONTEXT-MAP.md` instead. The user must say so — default is single-context.
 
 ## Process
 
-### 1. Explore
+### 1. Check current state
 
-Look at the current repo to understand its starting state. Read whatever exists; don't assume:
+Run in the current working directory:
 
-- `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
-- `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is there already an `## Agent skills` section in either?
-- `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
-- `docs/adr/` and any `src/*/docs/adr/` directories
-- `docs/agents/` — does this skill's prior output already exist?
-- `.scratch/` — sign that a local-markdown issue tracker convention is already in use
-
-### 2. Present findings and ask
-
-Summarise what's present and what's missing. Then walk the user through the three decisions **one at a time** — present a section, get the user's answer, then move to the next. Don't dump all three at once.
-
-Assume the user does not know what these terms mean. Each section starts with a short explainer (what it is, why these skills need it, what changes if they pick differently). Then show the choices and the default.
-
-**Section A — Issue tracker.**
-
-> Explainer: The "issue tracker" is where issues live for this repo. Skills like `to-issues`, `triage`, `to-prd`, and `qa` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
-
-Default posture: these skills were designed for GitHub. If a `git remote` points at GitHub, propose that. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
-
-- **GitHub** — issues live in the repo's GitHub Issues (uses the `gh` CLI)
-- **GitLab** — issues live in the repo's GitLab Issues (uses the [`glab`](https://gitlab.com/gitlab-org/cli) CLI)
-- **Local markdown** — issues live as files under `.scratch/<feature>/` in this repo (good for solo projects or repos without a remote)
-- **Other** (Jira, Linear, etc.) — ask the user to describe the workflow in one paragraph; the skill will record it as freeform prose
-
-**Section B — Triage label vocabulary.**
-
-> Explainer: When the `triage` skill processes an incoming issue, it moves it through a state machine — needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix. To do that, it needs to apply labels (or the equivalent in your issue tracker) that match strings *you've actually configured*. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here so the skill applies the right ones instead of creating duplicates.
-
-The five canonical roles:
-
-- `needs-triage` — maintainer needs to evaluate
-- `needs-info` — waiting on reporter
-- `ready-for-agent` — fully specified, AFK-ready (an agent can pick it up with no human context)
-- `ready-for-human` — needs human implementation
-- `wontfix` — will not be actioned
-
-Default: each role's string equals its name. Ask the user if they want to override any. If their issue tracker has no existing labels, the defaults are fine.
-
-**Section C — Domain docs.**
-
-> Explainer: Some skills (`improve-codebase-architecture`, `diagnose`, `tdd`) read a `CONTEXT.md` file to learn the project's domain language, and `docs/adr/` for past architectural decisions. They need to know whether the repo has one global context or multiple (e.g. a monorepo with separate frontend/backend contexts) so they look in the right place.
-
-Confirm the layout:
-
-- **Single-context** — one `CONTEXT.md` + `docs/adr/` at the repo root. Most repos are this.
-- **Multi-context** — `CONTEXT-MAP.md` at the root pointing to per-context `CONTEXT.md` files (typically a monorepo).
-
-### 3. Confirm and edit
-
-Show the user a draft of:
-
-- The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
-- The contents of `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md`
-
-Let them edit before writing.
-
-### 4. Write
-
-**Pick the file to edit:**
-
-- If `CLAUDE.md` exists, edit it.
-- Else if `AGENTS.md` exists, edit it.
-- If neither exists, ask the user which one to create — don't pick for them.
-
-Never create `AGENTS.md` when `CLAUDE.md` already exists (or vice versa) — always edit the one that's already there.
-
-If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.
-
-The block:
-
-```markdown
-## Agent skills
-
-### Issue tracker
-
-[one-line summary of where issues are tracked]. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-[one-line summary of the label vocabulary]. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-[one-line summary of layout — "single-context" or "multi-context"]. See `docs/agents/domain.md`.
+```bash
+git remote get-url origin                                # must be a GitHub URL
+gh label list --json name -q '.[].name'                  # existing labels
+ls CONTEXT.md CONTEXT-MAP.md docs/adr/ 2>/dev/null       # existing docs
 ```
 
-Then write the three docs files using the seed templates in this skill folder as a starting point:
+### 2. Confirm with user
 
-- [issue-tracker-github.md](./issue-tracker-github.md) — GitHub issue tracker
-- [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) — GitLab issue tracker
-- [issue-tracker-local.md](./issue-tracker-local.md) — local-markdown issue tracker
-- [triage-labels.md](./triage-labels.md) — label mapping
-- [domain.md](./domain.md) — domain doc consumer rules + layout
+Show what's missing and what will be created. Ask:
 
-For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
+- Single-context or multi-context? (default single)
+- Proceed?
+
+### 3. Create missing labels
+
+For each canonical label not in `gh label list`:
+
+```bash
+gh label create needs-triage      --description "Maintainer needs to evaluate" --color FBCA04
+gh label create needs-info        --description "Waiting on reporter" --color D4C5F9
+gh label create ready-for-agent   --description "Fully specified, AFK-ready" --color 0E8A16
+gh label create ready-for-human   --description "Needs human implementation" --color 1D76DB
+gh label create wontfix           --description "Will not be actioned" --color CCCCCC
+```
+
+### 4. Create missing files
+
+If single-context and no `CONTEXT.md`:
+
+```markdown
+# CONTEXT
+
+Domain glossary for this project.
+
+## Terms
+
+<!-- Add domain terms here as they crystallise. Format: Term — definition. -->
+```
+
+If multi-context and no `CONTEXT-MAP.md`:
+
+```markdown
+# CONTEXT MAP
+
+Multi-context repo. Each context has its own CONTEXT.md and docs/adr/.
+
+## Contexts
+
+- `<path/to/context-a>/CONTEXT.md` — <one-line summary>
+- `<path/to/context-b>/CONTEXT.md` — <one-line summary>
+```
+
+If no `docs/adr/0001-record-architecture-decisions.md`:
+
+```markdown
+# 1. Record architecture decisions
+
+Date: <today>
+
+## Status
+
+Accepted
+
+## Context
+
+We need to record the architectural decisions made on this project.
+
+## Decision
+
+Use ADRs (Architecture Decision Records) to capture significant choices. One file per decision in `docs/adr/`, numbered sequentially.
+
+## Consequences
+
+Future contributors and agents can understand why the codebase looks the way it does.
+```
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Report what was created and what was skipped. No further config needed — the engineering skills will work in this repo from now on.
