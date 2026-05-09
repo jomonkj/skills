@@ -61,6 +61,25 @@ For each AFK slice, classify difficulty using these heuristics:
 | `medium` | 1-2 hour task, 1-3 files, standard pattern reuse, **default for most slices** |
 | `hard` | Design-defining, multi-file, cross-domain, new abstractions, security-sensitive, schema migrations |
 
+### Priority labels (optional)
+
+Apply ONLY when overriding the default `medium`. There is no `priority:medium` label — absence IS medium.
+
+| Label | Color | When |
+|---|---|---|
+| `priority:high` | red `D93F0B` | Active grill outcome, ship blocker, security/correctness fix needed soon, dep that other queued work waits on |
+| (none) | — | Default — most slices |
+| `priority:low` | green `0E8A16` | Polish, refactor with no caller, future-only nice-to-have |
+
+Setup once per repo:
+
+```bash
+gh label create priority:high --color D93F0B
+gh label create priority:low --color 0E8A16
+```
+
+**Heuristic:** if you wouldn't tell a teammate "drop what you're doing and pick this up next" → not high. If you wouldn't mind it slipping a week → low. Otherwise omit.
+
 Add `need-agent-review` to a slice when **any** of these apply:
 
 - Touches authentication, authorization, secrets, or payment paths
@@ -70,6 +89,10 @@ Add `need-agent-review` to a slice when **any** of these apply:
 - The slice description explicitly says "review carefully"
 
 When in doubt, leave `need-agent-review` off and rely on the slice's tests.
+
+### Branch + worktree naming (informational)
+
+Sandcastle now uses `sc/<code>/issue-N` branches (e.g. `sc/yo/issue-42`) and `sc-<code>-issue-N` worktree dirs. The skill itself doesn't care, but operators reading PRs / browsing IDE will see this format. See ADR 0019 in yolo-hq/sandcastle.
 
 ### 5. Quiz the user
 
@@ -104,6 +127,7 @@ gh issue create \
   --title "Slice N — <title>" \
   --label "Sandcastle" \
   --label "difficulty:medium" \
+  --label "priority:high" \  # optional, only when overriding medium
   --body "$(cat <<'EOF'
 ... issue body ...
 EOF
@@ -111,6 +135,20 @@ EOF
 ```
 
 Add `--label need-agent-review` if the slice meets the review criteria from step 4.
+
+### Dep consistency rule (priority)
+
+Before applying `priority:high` to issue X, verify every issue listed in X's `## Blocked by` is also `priority:high`. If any blocker is unmarked (medium) or `priority:low`:
+
+```
+FAIL LOUD. Tell the operator:
+"Cannot set #X as priority:high. Blocker #Y is priority:medium.
+Fix one of:
+  (a) raise #Y to priority:high
+  (b) lower #X back to medium"
+```
+
+Same rule symmetrically: refuse `priority:low` on X if any issue blocked-by X is `priority:high`. Skill never auto-modifies linked issues — only fails loud.
 
 <issue-template>
 ## Parent

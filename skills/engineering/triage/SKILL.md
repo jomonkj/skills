@@ -53,6 +53,28 @@ Difficulty heuristic when triaging an incoming issue:
 | `medium` | 1–2 hour task, standard pattern, **default** |
 | `hard` | Cross-domain, schema change, new abstraction, security path |
 
+**Priority labels (optional):** apply ONLY when overriding the default `medium`. There is no `priority:medium` label — absence IS medium.
+
+| Label | Color | When |
+|---|---|---|
+| `priority:high` | red `D93F0B` | Active grill outcome, ship blocker, security/correctness fix needed soon, dep that other queued work waits on |
+| (none) | — | Default — most issues |
+| `priority:low` | green `0E8A16` | Polish, refactor with no caller, future-only nice-to-have |
+
+**Heuristic:** if you wouldn't tell a teammate "drop what you're doing and pick this up next" → not high. If you wouldn't mind it slipping a week → low. Otherwise omit.
+
+**Dep consistency rule (priority):** when changing priority on an existing issue, verify against blockers. Before applying `priority:high` to issue X, verify every issue in X's `## Blocked by` is also `priority:high`. If any blocker is unmarked (medium) or `priority:low`:
+
+```
+FAIL LOUD. Tell the operator:
+"Cannot set #X as priority:high. Blocker #Y is priority:medium.
+Fix one of:
+  (a) raise #Y to priority:high
+  (b) lower #X back to medium"
+```
+
+Same rule symmetrically: refuse `priority:low` on X if any issue blocked-by X is `priority:high`. Skill never auto-modifies linked issues — only fails loud.
+
 If the issue is moving to `ready-for-human` (not `ready-for-agent`), **do not** apply sandcastle labels.
 
 If sandcastle labels are missing, create them (see `to-issues` SKILL.md for the create commands).

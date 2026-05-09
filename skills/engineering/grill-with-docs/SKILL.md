@@ -85,4 +85,8 @@ Only offer to create an ADR when all three are true:
 
 If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
 
+### Priority hint for grill outputs
+
+Fresh grill outputs that the operator intends to act on immediately (current focus, unblocked slices) default to `priority:high` when published as issues. Background polish, planning artifacts, or future-only nice-to-haves default to medium (omit label) or `priority:low`.
+
 </supporting-info>

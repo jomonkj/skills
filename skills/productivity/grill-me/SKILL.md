@@ -8,3 +8,7 @@ Interview me relentlessly about every aspect of this plan until we reach a share
 Ask the questions one at a time.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
+
+## Priority hint for grill outputs
+
+Fresh grill outputs that the operator intends to act on immediately (current focus, unblocked slices) default to `priority:high` when published as issues. Background polish, planning artifacts, or future-only nice-to-haves default to medium (omit label) or `priority:low`.
