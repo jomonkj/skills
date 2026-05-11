@@ -9,11 +9,11 @@ This skill takes the current conversation context and codebase understanding and
 
 **Triage labels (canonical, hardcoded):** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. If a label is missing in the target repo, run `gh label create <name>` first, then apply.
 
-**Sandcastle labels (apply to PRDs whose slices will run under the fleet):**
+**Yard labels (apply to PRDs whose slices will run under the fleet):**
 
 - `PRD` — marks this issue as a parent PRD
-- `Sandcastle` — opt the PRD itself into fleet visibility (so collector can detect it for cross-PRD deps)
-- `need-agent-review` — when applied to a PRD, sandcastle fires an Opus batch review across all merged children when the operator closes the PRD
+- `Yard` — opt the PRD itself into fleet visibility (so collector can detect it for cross-PRD deps)
+- `need-agent-review` — when applied to a PRD, yard fires an Opus batch review across all merged children when the operator closes the PRD
 
 Apply `need-agent-review` to a PRD when **any** of these apply:
 
@@ -22,11 +22,11 @@ Apply `need-agent-review` to a PRD when **any** of these apply:
 - Security-sensitive
 - More than ~10 slices (hard for a single agent to keep mental model)
 
-If sandcastle labels are missing, create them first:
+If yard labels are missing, create them first:
 
 ```bash
 gh label create PRD --color 5319E7 --description "Parent PRD issue"
-gh label create Sandcastle --color 1D76DB --description "Issues processed by the sandcastle fleet orchestrator"
+gh label create Yard --color 1D76DB --description "Issues processed by the yard fleet orchestrator"
 gh label create need-agent-review --color 5319E7
 ```
 
@@ -42,10 +42,10 @@ Check with the user that these modules match their expectations. Check with the 
 
 3. Write the PRD using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
 
-   For PRDs destined for the sandcastle fleet, also apply:
+   For PRDs destined for the yard fleet, also apply:
 
    - `PRD` (parent marker)
-   - `Sandcastle` (fleet visibility)
+   - `Yard` (fleet visibility)
    - `need-agent-review` (only if the criteria above match — multi-domain, public API, security-sensitive, or > ~10 slices)
 
    Example:
@@ -54,7 +54,7 @@ Check with the user that these modules match their expectations. Check with the 
    gh issue create \
      --title "PRD: <feature name>" \
      --label "PRD" \
-     --label "Sandcastle" \
+     --label "Yard" \
      --label "need-agent-review" \
      --body "$(cat <<'EOF'
    ... PRD body ...

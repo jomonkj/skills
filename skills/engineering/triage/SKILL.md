@@ -39,9 +39,9 @@ Every triaged issue should carry exactly one category role and one state role. I
 
 **Labels (hardcoded):** apply the role name directly as the label string (no remap). Before applying any label, check `gh label list` — if the label is missing, run `gh label create <name>` first, then apply.
 
-**Sandcastle labels (apply when transitioning to `ready-for-agent` AND the issue should be picked up by the sandcastle fleet):**
+**Yard labels (apply when transitioning to `ready-for-agent` AND the issue should be picked up by the yard fleet):**
 
-- `Sandcastle` — opt into fleet processing
+- `Yard` — opt into fleet processing
 - `difficulty:easy` | `difficulty:medium` | `difficulty:hard` — exactly one
 - `need-agent-review` — optional, for security-sensitive or design-defining issues
 
@@ -87,9 +87,9 @@ Fix one of:
 
 Same rule symmetrically: refuse `priority:low` or `priority:lowest` on X if any issue blocked-by X is at a stronger level. Skill never auto-modifies linked issues — only fails loud.
 
-If the issue is moving to `ready-for-human` (not `ready-for-agent`), **do not** apply sandcastle labels.
+If the issue is moving to `ready-for-human` (not `ready-for-agent`), **do not** apply yard labels.
 
-If sandcastle labels are missing, create them (see `to-issues` SKILL.md for the create commands).
+If yard labels are missing, create them (see `to-issues` SKILL.md for the create commands).
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 
