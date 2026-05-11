@@ -12,8 +12,9 @@ This skill takes the current conversation context and codebase understanding and
 **Yard labels (apply to PRDs whose slices will run under the fleet):**
 
 - `PRD` — marks this issue as a parent PRD
-- `Yard` — opt the PRD itself into fleet visibility (so collector can detect it for cross-PRD deps)
 - `need-agent-review` — when applied to a PRD, yard fires an Opus batch review across all merged children when the operator closes the PRD
+
+**Do NOT apply `Yard` to a PRD parent.** Yard's design (see `yard/src/prd-review.ts:8` and scheduler PRD-skip logic) assumes PRDs are tracking issues, not work units — the slices carry `Yard`, the parent does not. If a PRD carries `Yard` and its children all close before the parent does, the collector hands the PRD to the fleet, the agent finds no work to do, and the merger lands it as `failed: no_commits`. PRD-end Opus review still fires correctly without `Yard` on the parent; it walks merged children, not the parent's label.
 
 Apply `need-agent-review` to a PRD when **any** of these apply:
 
@@ -26,9 +27,10 @@ If yard labels are missing, create them first:
 
 ```bash
 gh label create PRD --color 5319E7 --description "Parent PRD issue"
-gh label create Yard --color 1D76DB --description "Issues processed by the yard fleet orchestrator"
 gh label create need-agent-review --color 5319E7
 ```
+
+(The `Yard` label itself is created by the `setup-yard` skill / per-repo onboarding, not here. Slices created from this PRD via `/to-issues` carry `Yard`; the PRD does not.)
 
 ## Process
 
@@ -45,8 +47,9 @@ Check with the user that these modules match their expectations. Check with the 
    For PRDs destined for the yard fleet, also apply:
 
    - `PRD` (parent marker)
-   - `Yard` (fleet visibility)
    - `need-agent-review` (only if the criteria above match — multi-domain, public API, security-sensitive, or > ~10 slices)
+
+   Do NOT add `Yard` to the PRD itself. The slices (created later via `/to-issues`) carry `Yard` and are the unit of work; the PRD is a tracking parent. Adding `Yard` to a PRD causes a `no_commits` failure once its last slice merges.
 
    Example:
 
@@ -54,7 +57,6 @@ Check with the user that these modules match their expectations. Check with the 
    gh issue create \
      --title "PRD: <feature name>" \
      --label "PRD" \
-     --label "Yard" \
      --label "need-agent-review" \
      --body "$(cat <<'EOF'
    ... PRD body ...
