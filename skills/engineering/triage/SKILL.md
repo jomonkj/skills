@@ -55,25 +55,37 @@ Difficulty heuristic when triaging an incoming issue:
 
 **Priority labels (optional):** apply ONLY when overriding the default `medium`. There is no `priority:medium` label — absence IS medium.
 
+5-level scale per ADR 0020 amendment (2026-05-11):
+
 | Label | Color | When |
 |---|---|---|
-| `priority:high` | red `D93F0B` | Active grill outcome, ship blocker, security/correctness fix needed soon, dep that other queued work waits on |
+| `priority:highest` | dark red `B60205` | Production down, security CVE, deadline today, ship-blocker with named consequence |
+| `priority:high` | red `D93F0B` | Active focus this sprint, dep that queued work waits on |
 | (none) | — | Default — most issues |
 | `priority:low` | green `0E8A16` | Polish, refactor with no caller, future-only nice-to-have |
+| `priority:lowest` | dark green `006B0E` | "Maybe never" — would only do if trivial, background drain |
 
-**Heuristic:** if you wouldn't tell a teammate "drop what you're doing and pick this up next" → not high. If you wouldn't mind it slipping a week → low. Otherwise omit.
+**Heuristic:**
+- `highest` interrupts your day. If you can wait until tomorrow → not highest.
+- `high` = next up this sprint. If you wouldn't tell a teammate "drop what you're doing" → not high.
+- `lowest` = you'd happily abandon it. If it's worth scheduling at all → not lowest.
+- `low` = future polish you'll get to eventually. Otherwise omit (medium).
 
-**Dep consistency rule (priority):** when changing priority on an existing issue, verify against blockers. Before applying `priority:high` to issue X, verify every issue in X's `## Blocked by` is also `priority:high`. If any blocker is unmarked (medium) or `priority:low`:
+**Anti-pattern guard:** if the fleet has more than **5 issues at `priority:highest`** at once, warn the operator: "highest means emergency; this many implies a real fire or label drift. Audit before adding more."
+
+**Dep consistency rule (priority):** when changing priority on an existing issue, verify against blockers. The rule generalises: `blocker.priority_rank ≤ dependent.priority_rank` (lower rank = higher urgency). Rank order: `highest=0, high=1, medium=2, low=3, lowest=4`.
+
+Before applying `priority:highest` or `priority:high` to issue X, verify every issue in X's `## Blocked by` is at the same level or higher. If any blocker is weaker:
 
 ```
 FAIL LOUD. Tell the operator:
 "Cannot set #X as priority:high. Blocker #Y is priority:medium.
 Fix one of:
-  (a) raise #Y to priority:high
-  (b) lower #X back to medium"
+  (a) raise #Y to priority:high (or higher)
+  (b) lower #X to match #Y"
 ```
 
-Same rule symmetrically: refuse `priority:low` on X if any issue blocked-by X is `priority:high`. Skill never auto-modifies linked issues — only fails loud.
+Same rule symmetrically: refuse `priority:low` or `priority:lowest` on X if any issue blocked-by X is at a stronger level. Skill never auto-modifies linked issues — only fails loud.
 
 If the issue is moving to `ready-for-human` (not `ready-for-agent`), **do not** apply sandcastle labels.
 
