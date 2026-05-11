@@ -9,6 +9,8 @@ Interview me relentlessly about every aspect of this plan until we reach a share
 
 Ask the questions one at a time, waiting for feedback on each question before continuing.
 
+Ask questions as plain text in the chat. Do NOT use the `AskUserQuestion` tool — the keyboard-navigable picker is unwanted. Format each question as a short A/B/C list with one-line descriptions, recommend one, then wait.
+
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
 </what-to-do>
