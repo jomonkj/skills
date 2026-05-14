@@ -13,6 +13,24 @@ Ask questions as plain text in the chat. Do NOT use the `AskUserQuestion` tool �
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
+## Communication style
+
+Goal: low cognitive load. Fast, smooth grilling. User is a non-native English speaker.
+
+- Plain English only. Short words, short sentences. No essays, no rare vocabulary, no walls of text.
+- One decision per question. No recap of context already covered.
+- If a term is unclear, define it in 5 words before using it.
+- Show, don't tell — use a tiny example, scenario, or code snippet over prose.
+- For option questions, use a comparison table. Columns: option, pros, cons, stars (★★★ = best pick). Recommend one. Wait.
+
+Example option table:
+
+| Option | Pros | Cons | Pick |
+|---|---|---|---|
+| A. Inline cancel | simple, one path | can't undo | ★★★ |
+| B. Soft cancel | reversible | extra state field | ★★ |
+| C. Event-sourced | full audit | heavy for this | ★ |
+
 </what-to-do>
 
 <supporting-info>
