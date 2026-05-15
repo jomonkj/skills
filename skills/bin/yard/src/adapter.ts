@@ -28,11 +28,24 @@ export interface GhLabel {
   description: string;
 }
 
-/** A GitHub issue as returned after creation. */
+/** A GitHub issue. `createIssue` populates only `number`/`url`; the richer
+ *  fields are filled by `listIssues`/`getIssue` (scope/deps need them). */
 export interface GhIssue {
   number: number;
   url: string;
+  /** Present for list/get; "" for the create return. */
+  title?: string;
+  /** "OPEN" | "CLOSED" (as `gh` returns `state`). Present for list/get. */
+  state?: string;
+  /** Label names. Present for list/get. */
+  labels?: string[];
+  /** Issue body markdown. Present for list/get (needed by the Blocked-by
+   *  parser); may be "" when not requested. */
+  body?: string;
 }
+
+/** Issue-state filter for `listIssues` (mirrors `gh issue list --state`). */
+export type IssueState = "open" | "closed" | "all";
 
 export interface Adapter {
   /** List labels in a repo. `repo` is `owner/name`. */
@@ -52,6 +65,18 @@ export interface Adapter {
     repo: string,
     issue: { title: string; body: string; labels: string[] },
   ): Promise<GhIssue>;
+  /**
+   * List issues in a repo (scope). `state` defaults to "open" at the gh
+   * boundary if omitted. `labels` is an AND filter (gh `--label` semantics).
+   * Returns issues with title/state/labels/body populated.
+   */
+  listIssues(
+    repo: string,
+    opts: { labels?: string[]; state?: IssueState },
+  ): Promise<GhIssue[]>;
+  /** Fetch one issue by number (deps: resolve a blocker's state in its own
+   *  repo). title/state/labels/body populated. */
+  getIssue(repo: string, number: number): Promise<GhIssue>;
 
   // --- git / filesystem boundary (ADR 0006: registry + init) ---
 
@@ -195,6 +220,84 @@ export class GhAdapter implements Adapter {
       throw new Error(`unexpected gh issue create output: ${url}`);
     }
     return { number: parseInt(match[1]!, 10), url };
+  }
+
+  async listIssues(
+    repo: string,
+    opts: { labels?: string[]; state?: IssueState },
+  ): Promise<GhIssue[]> {
+    const args = [
+      "gh",
+      "issue",
+      "list",
+      "--repo",
+      repo,
+      "--state",
+      opts.state ?? "open",
+      // Hard cap — `gh issue list` paginates; 1000 is plenty for a slice
+      // graph and keeps the call bounded/deterministic.
+      "--limit",
+      "1000",
+      "--json",
+      "number,title,state,labels,body,url",
+    ];
+    for (const label of opts.labels ?? []) {
+      args.push("--label", label);
+    }
+    const r = await run(args);
+    if (r.code !== 0) {
+      throw new Error(`gh issue list failed for ${repo}: ${r.stderr.trim()}`);
+    }
+    const raw = JSON.parse(r.stdout || "[]") as Array<{
+      number: number;
+      title: string;
+      state: string;
+      labels: Array<{ name: string }>;
+      body: string;
+      url: string;
+    }>;
+    return raw.map((i) => ({
+      number: i.number,
+      url: i.url,
+      title: i.title,
+      state: i.state,
+      labels: i.labels.map((l) => l.name),
+      body: i.body ?? "",
+    }));
+  }
+
+  async getIssue(repo: string, number: number): Promise<GhIssue> {
+    const r = await run([
+      "gh",
+      "issue",
+      "view",
+      String(number),
+      "--repo",
+      repo,
+      "--json",
+      "number,title,state,labels,body,url",
+    ]);
+    if (r.code !== 0) {
+      throw new Error(
+        `gh issue view ${number} failed for ${repo}: ${r.stderr.trim()}`,
+      );
+    }
+    const i = JSON.parse(r.stdout) as {
+      number: number;
+      title: string;
+      state: string;
+      labels: Array<{ name: string }>;
+      body: string;
+      url: string;
+    };
+    return {
+      number: i.number,
+      url: i.url,
+      title: i.title,
+      state: i.state,
+      labels: i.labels.map((l) => l.name),
+      body: i.body ?? "",
+    };
   }
 
   async cloneRepo(url: string, dir: string): Promise<void> {

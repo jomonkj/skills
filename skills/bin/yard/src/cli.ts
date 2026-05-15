@@ -27,6 +27,8 @@ import {
   depRm,
   projectSync,
 } from "./handlers/registry-mutate.ts";
+import { scope } from "./handlers/scope.ts";
+import { deps, CycleError } from "./handlers/deps.ts";
 import {
   labelsEnsureInput,
   registryReadInput,
@@ -40,6 +42,8 @@ import {
   depAddInput,
   depRmInput,
   projectSyncInput,
+  scopeInput,
+  depsInput,
 } from "./schema.ts";
 import { emitYaml, type Json } from "./yaml.ts";
 
@@ -76,6 +80,18 @@ function parseFlags(argv: string[]): Record<string, string | boolean | string[]>
   return out;
 }
 
+/**
+ * The leading positional argument (e.g. the `scope`/`deps` expr), which must
+ * precede any `--flags`. Returns undefined when the first token is a flag or
+ * absent — never a flag *value* (so `scope --file X` is a usage error, not
+ * `expr=X`).
+ */
+function leadingPositional(rest: string[]): string | undefined {
+  const first = rest[0];
+  if (first === undefined || first.startsWith("--")) return undefined;
+  return first;
+}
+
 function emit(value: Json, format: "json" | "yaml"): void {
   if (format === "yaml") {
     process.stdout.write(emitYaml(value));
@@ -92,6 +108,12 @@ Usage:
   yard init           --from <yard-config-url> --profile <name> [--format json|yaml]
   yard issue-create   --repo <owner/name> --title <title> [--body <text>] [--label <name>]...
                       [--parent <N>] [--ensure-set triage|yard|all|none] [--dry-run] [--format json|yaml]
+  yard scope <expr>   [--file <path> | --project <name>] [--repo <owner/name>]
+                      [--state open|closed|all] [--format json|yaml]
+  yard deps  <expr>   [--file <path> | --project <name>] [--repo <owner/name>]
+                      [--state open|closed|all] [--format json|yaml]
+
+  <expr> is one of:  prd:  |  label:<name>  |  issue:owner/repo#N  |  issue:#N  |  all
 
 Registry mutators — the ONLY writers of the yard-config registry (ADR 0006).
 Never hand-edit registry YAML; use these commands instead:
@@ -455,6 +477,71 @@ export async function main(
       log(""); log(USAGE); return EXIT_USAGE;
     }
 
+    case "scope": {
+      const exprArg = leadingPositional(rest);
+      const stateFlag =
+        typeof flags.state === "string" ? flags.state : "open";
+      const parsed = scopeInput.safeParse({
+        expr: exprArg,
+        file: typeof flags.file === "string" ? flags.file : undefined,
+        project: typeof flags.project === "string" ? flags.project : undefined,
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        state: stateFlag,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await scope(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `scope: ${result.issues.length} issue(s), ` +
+            `${result.errors.length} repo error(s)`,
+        );
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "deps": {
+      const exprArg = leadingPositional(rest);
+      const stateFlag =
+        typeof flags.state === "string" ? flags.state : "open";
+      const parsed = depsInput.safeParse({
+        expr: exprArg,
+        file: typeof flags.file === "string" ? flags.file : undefined,
+        project: typeof flags.project === "string" ? flags.project : undefined,
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        state: stateFlag,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await deps(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `deps: ${result.nodes.length} node(s), ` +
+            `${result.batches.length} batch(es), ` +
+            `${result.errors.length} repo error(s)`,
+        );
+        return EXIT_OK;
+      } catch (err) {
+        if (err instanceof CycleError) {
+          log("error: " + err.message);
+          return EXIT_ERR;
+        }
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
     default:
       log(`unknown command: ${command}`);
       log("");
