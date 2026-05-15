@@ -119,8 +119,16 @@ export async function dispatchInit(
           `ago, < 2h stale window) — refusing double-dispatch (ADR 0007)`,
       );
     }
-    // Stale lease: reclaim. Keep the label (it is still the lease, just
-    // re-owned); only (re)materialise the worktree.
+    // Stale lease: reclaim. We deliberately do NOT refresh the lease
+    // timestamp here. Re-applying `phase:implementing` would mean a
+    // remove-then-add (it is already present) — a brief no-phase window that
+    // breaks the single-call atomicity invariant, which is worse than the
+    // edge it would close. The remaining edge (a reclaimed run that itself
+    // runs >2h, so a third dispatcher also sees a stale timestamp) is closed
+    // by the real mutex one layer down: `git worktree add -b <branch>` fails
+    // loudly on a duplicate branch, so two concurrent reclaimers cannot both
+    // materialise — the loser gets a hard error, never a silent double. The
+    // timestamp is informational; the worktree branch is the lock of record.
     await ensureWorktree(adapter, repoDir, wt, branch, base, wtEntry?.path);
     return result(repo, issue, branch, wt, base, "reclaimed");
   }
