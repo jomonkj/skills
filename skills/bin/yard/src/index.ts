@@ -177,3 +177,4 @@ export type {
   GhLabel,
   IssueState,
 } from "./adapter.ts";
+export { buildMcpServer, startMcpServer } from "./mcp.ts";

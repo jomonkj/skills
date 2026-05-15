@@ -115,6 +115,7 @@ function emit(value: Json, format: "json" | "yaml"): void {
 const USAGE = `yard — deterministic git/gh/label plumbing (ADR 0003)
 
 Usage:
+  yard mcp            Start an MCP stdio server exposing every handler as a tool (ADR 0003).
   yard labels-ensure  --repo <owner/name> --set triage|yard|all [--dry-run] [--format json|yaml]
   yard registry-read  (--file <path> | --project <name>) [--format json|yaml]
   yard init           --from <yard-config-url> --profile <name> [--format json|yaml]
@@ -767,6 +768,13 @@ export async function main(
         log("error: " + (err instanceof Error ? err.message : String(err)));
         return EXIT_ERR;
       }
+    }
+    case "mcp": {
+      // Start an MCP stdio server. This call does not return until the transport
+      // closes (stdin EOF). No --format: MCP uses its own JSON-RPC framing.
+      const { startMcpServer } = await import("./mcp.ts");
+      await startMcpServer(adapter);
+      return EXIT_OK;
     }
     default:
       log(`unknown command: ${command}`);
