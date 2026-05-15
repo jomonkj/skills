@@ -35,3 +35,29 @@ export const initInput = z.object({
   profile: z.string().min(1, "--profile <name> is required"),
 });
 export type InitInput = z.infer<typeof initInput>;
+
+export const issueCreateInput = z.object({
+  /** `owner/name`. */
+  repo: z.string().min(1, "repo is required (owner/name)"),
+  /** Issue title. */
+  title: z.string().min(1, "title is required"),
+  /** Issue body markdown. */
+  body: z.string().default(""),
+  /** Labels to apply. Labels are ensured (via labels-ensure) before creation. */
+  labels: z.array(z.string()).default([]),
+  /**
+   * Parent issue number. When provided, a `## Parent\n#N` section is
+   * prepended to the body (per the issue template in to-issues/SKILL.md).
+   */
+  parent: z.number().int().positive().optional(),
+  /**
+   * Which canonical label set to ensure before creating the issue.
+   * Defaults to "all". Pass "none" to skip label-ensure (useful when you
+   * know labels are already present).
+   */
+  ensureSet: z.enum(["triage", "yard", "all", "none"]).default("all"),
+  /** When true, report what would happen without calling `gh`. */
+  dryRun: z.boolean().default(false),
+});
+
+export type IssueCreateInput = z.infer<typeof issueCreateInput>;

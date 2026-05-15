@@ -37,7 +37,7 @@ Every triaged issue should carry exactly one category role and one state role. I
 
 **Issue tracker:** GitHub via the `gh` CLI. Repo = `git remote get-url origin` of the current working directory.
 
-**Labels (hardcoded):** apply the role name directly as the label string (no remap). Before applying any label, check `gh label list` — if the label is missing, run `gh label create <name>` first, then apply.
+**Labels:** apply the role name directly as the label string (no remap). Before applying any label, check `gh label list` — if labels are missing, run `yard labels-ensure --repo <owner/name> --set all` first, then apply.
 
 **Yard labels (apply when transitioning to `ready-for-agent` AND the issue should be picked up by the yard fleet):**
 
@@ -89,7 +89,11 @@ Same rule symmetrically: refuse `priority:low` or `priority:lowest` on X if any 
 
 If the issue is moving to `ready-for-human` (not `ready-for-agent`), **do not** apply yard labels.
 
-If yard labels are missing, create them (see `to-issues` SKILL.md for the create commands).
+If yard labels are missing, ensure them:
+
+```bash
+yard labels-ensure --repo <owner/name> --set all
+```
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 

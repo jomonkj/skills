@@ -16,7 +16,8 @@ import { GhAdapter, type Adapter } from "./adapter.ts";
 import { labelsEnsure } from "./handlers/labels-ensure.ts";
 import { registryRead } from "./handlers/registry-read.ts";
 import { init } from "./handlers/init.ts";
-import { labelsEnsureInput, registryReadInput, initInput } from "./schema.ts";
+import { issueCreate } from "./handlers/issue-create.ts";
+import { labelsEnsureInput, registryReadInput, initInput, issueCreateInput } from "./schema.ts";
 import { emitYaml, type Json } from "./yaml.ts";
 
 const EXIT_OK = 0;
@@ -27,9 +28,9 @@ function log(msg: string): void {
   process.stderr.write(msg + "\n");
 }
 
-/** Minimal flag parser: `--key value` and `--flag` (boolean). */
-function parseFlags(argv: string[]): Record<string, string | boolean> {
-  const out: Record<string, string | boolean> = {};
+/** Minimal flag parser: `--key value`, `--flag` (boolean), and repeated `--key v1 --key v2`. */
+function parseFlags(argv: string[]): Record<string, string | boolean | string[]> {
+  const out: Record<string, string | boolean | string[]> = {};
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i]!;
     if (!tok.startsWith("--")) continue;
@@ -38,7 +39,14 @@ function parseFlags(argv: string[]): Record<string, string | boolean> {
     if (next === undefined || next.startsWith("--")) {
       out[key] = true;
     } else {
-      out[key] = next;
+      const prev = out[key];
+      if (Array.isArray(prev)) {
+        prev.push(next);
+      } else if (typeof prev === "string") {
+        out[key] = [prev, next];
+      } else {
+        out[key] = next;
+      }
       i++;
     }
   }
@@ -59,6 +67,8 @@ Usage:
   yard labels-ensure --repo <owner/name> --set triage|yard|all [--dry-run] [--format json|yaml]
   yard registry-read (--file <path> | --project <name>) [--format json|yaml]
   yard init --from <yard-config-url> --profile <name> [--format json|yaml]
+  yard issue-create  --repo <owner/name> --title <title> [--body <text>] [--label <name>]...
+                     [--parent <N>] [--ensure-set triage|yard|all|none] [--dry-run] [--format json|yaml]
 
 Global:
   --format json|yaml   output format (default: json)
@@ -149,6 +159,51 @@ export async function main(
             `${result.configDir}, profile ${result.profileFile}, ` +
             `${result.projects.length} project(s)`,
         );
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "issue-create": {
+      // Collect multi-value --label flags.
+      const rawLabels = flags.label;
+      const labels: string[] = Array.isArray(rawLabels)
+        ? rawLabels
+        : typeof rawLabels === "string"
+          ? [rawLabels]
+          : [];
+      const rawParent = flags.parent;
+      const parentNum =
+        typeof rawParent === "string" ? parseInt(rawParent, 10) : undefined;
+
+      const parsed = issueCreateInput.safeParse({
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        title: typeof flags.title === "string" ? flags.title : undefined,
+        body: typeof flags.body === "string" ? flags.body : "",
+        labels,
+        parent:
+          parentNum !== undefined && !isNaN(parentNum) ? parentNum : undefined,
+        ensureSet:
+          typeof flags["ensure-set"] === "string"
+            ? flags["ensure-set"]
+            : "all",
+        dryRun: flags["dry-run"] === true,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await issueCreate(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        if (result.dryRun) {
+          log(`issue-create: dry-run — would create "${result.title}"`);
+        } else {
+          log(`issue-create: #${result.number} ${result.url}`);
+        }
         return EXIT_OK;
       } catch (err) {
         log("error: " + (err instanceof Error ? err.message : String(err)));

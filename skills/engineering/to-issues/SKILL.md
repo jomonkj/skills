@@ -9,7 +9,7 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 **Issue tracker:** GitHub via the `gh` CLI. Repo = `git remote get-url origin` of the current working directory. If no GitHub remote, ask the user how to publish before proceeding.
 
-**Triage labels (canonical, hardcoded):** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. If a label is missing in the target repo, run `gh label create <name>` first, then apply.
+**Triage labels (canonical):** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. If labels are missing in the target repo, run `yard labels-ensure` first (see below).
 
 **Yard labels (for AFK slices destined for the fleet orchestrator):**
 
@@ -19,14 +19,10 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 - `difficulty:hard` — design-heavy or cross-layer (multi-domain reasoning, new abstractions)
 - `need-agent-review` — force a separate Opus reviewer pass after implementation (use sparingly; reserve for security-sensitive or architecture-defining slices)
 
-If yard labels are missing in the target repo, create them first:
+If labels are missing in the target repo, ensure them first:
 
 ```bash
-gh label create Yard --color 1D76DB --description "Issues processed by the yard fleet orchestrator"
-gh label create difficulty:easy --color C2E0C6
-gh label create difficulty:medium --color FBCA04
-gh label create difficulty:hard --color D93F0B
-gh label create need-agent-review --color 5319E7
+yard labels-ensure --repo <owner/name> --set all
 ```
 
 ## Process
@@ -75,13 +71,10 @@ Apply ONLY when overriding the default `medium`. There is no `priority:medium` l
 | `priority:low` | green `0E8A16` | Polish, refactor with no caller, future-only nice-to-have |
 | `priority:lowest` | dark green `006B0E` | "Maybe never" — would only do if trivial, background drain |
 
-Setup once per repo:
+Setup once per repo (priority labels are included in the `yard` set):
 
 ```bash
-gh label create priority:highest --color B60205 --description "Production down, security CVE, deadline today"
-gh label create priority:high    --color D93F0B
-gh label create priority:low     --color 0E8A16
-gh label create priority:lowest  --color 006B0E --description "Maybe never — background drain only"
+yard labels-ensure --repo <owner/name> --set yard
 ```
 
 **Heuristic:**
@@ -135,11 +128,13 @@ Publish issues in dependency order (blockers first) so you can reference real is
 Example for an AFK yard-destined slice:
 
 ```bash
-gh issue create \
+yard issue-create \
+  --repo <owner/name> \
   --title "Slice N — <title>" \
   --label "Yard" \
   --label "difficulty:medium" \
-  --label "priority:high" \  # optional, only when overriding medium
+  --label "priority:high" \
+  --parent <parent-issue-number> \
   --body "$(cat <<'EOF'
 ... issue body ...
 EOF
@@ -147,6 +142,8 @@ EOF
 ```
 
 Add `--label need-agent-review` if the slice meets the review criteria from step 4.
+
+`yard issue-create` runs `labels-ensure --set all` automatically before creating the issue. Pass `--ensure-set none` to skip if you know labels are already present.
 
 ### Dep consistency rule (priority)
 
