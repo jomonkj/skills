@@ -30,12 +30,12 @@ If you want to keep up with changes to these skills, and any new ones I create, 
 npx skills@latest add mattpocock/skills
 ```
 
-2. Pick the skills you want, and which coding agents you want to install them on. **Make sure you select `/setup-matt-pocock-skills`**.
+2. Pick the skills you want, and which coding agents you want to install them on. **Make sure you select `/setup-yard`**.
 
-3. Run `/setup-matt-pocock-skills` in your agent. It will:
-   - Ask you which issue tracker you want to use (GitHub, Linear, or local files)
-   - Ask you what labels you apply to ticks when you triage them (`/triage` uses labels)
-   - Ask you where you want to save any docs we create
+3. Run `/setup-yard` (or `/setup-yard --triage` for a triage-only repo) in your agent. It will:
+   - Ensure the canonical GitHub labels via `yard labels-ensure` (single source of truth)
+   - Register the project in the ship registry via the `yard` CLI (full mode)
+   - Scaffold `CONTEXT.md` and the `docs/adr/` template if missing
 
 4. Bam - you're ready to go.
 
@@ -150,10 +150,10 @@ Skills I use daily for code work.
 - **[grill-with-docs](./skills/engineering/grill-with-docs/SKILL.md)** — Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates `CONTEXT.md` and ADRs inline.
 - **[triage](./skills/engineering/triage/SKILL.md)** — Triage issues through a state machine of triage roles.
 - **[improve-codebase-architecture](./skills/engineering/improve-codebase-architecture/SKILL.md)** — Find deepening opportunities in a codebase, informed by the domain language in `CONTEXT.md` and the decisions in `docs/adr/`.
-- **[setup-matt-pocock-skills](./skills/engineering/setup-matt-pocock-skills/SKILL.md)** — Scaffold the per-repo config (issue tracker, triage label vocabulary, domain doc layout) that the other engineering skills consume. Run once per repo before using `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out`.
-- **[setup-yard](./skills/engineering/setup-yard/SKILL.md)** — Onboard a repo into the yard fleet: write `.yard/config.yml` with a unique project code, create the 9 yard labels, verify with `agent doctor` + `agent plan`. Idempotent.
-- **[ship-prd](./skills/engineering/ship-prd/SKILL.md)** — Execute a yard-ready PRD (parent + child slices) end-to-end without the yard fleet: subagents implement → review → merge-check → push → poll CI → squash-merge → delete branch. Model tier from `difficulty:*` labels, up to 3 slices in parallel via worktrees, branch naming per ADR 0019 (`yd/<code>/issue-N`), and yard's escalation FSM (1 retry/tier × 3 tiers → HITL).
-- **[review-sweep](./skills/engineering/review-sweep/SKILL.md)** — Documentation for yard's `./agent review-sweep` CLI. Processes GitHub items labelled `ready-for-review` via one Claude API call per item with structured `tool_use` verdict (`ok`/`file-issue`/`file-prd`/`escalate`). 10-50× cheaper than a sandcastle agent review.
+- **[setup-yard](./skills/engineering/setup-yard/SKILL.md)** — One-time per-repo onboarding into the ship workflow: register the project via the `yard` CLI, ensure canonical labels through `yard labels-ensure` (single source), scaffold `CONTEXT.md`/ADR docs. `--triage` does the lightweight triage-only scaffold. Merged form of the old setup-yard + setup-yolo-skills. Idempotent.
+- **[ship](./skills/engineering/ship/SKILL.md)** — Execute a Yard-ready PRD/scope end-to-end on the deterministic `yard` CLI: resolve scope → dispatch unblocked slices to parallel worktree subagents (implement → self-review → dedicated review → merge-check → PR → CI → squash-merge) → deterministic run summary. `--plan` does a read-only pre-flight that emits the `/goal` command. Escalation sonnet→opus→HITL. Supersedes ship-prd.
+- **[ship-prd](./skills/engineering/ship-prd/SKILL.md)** — Transitional fallback, superseded by [ship](./skills/engineering/ship/SKILL.md). Yard-less PRD execution reading phase prompts from `yolo-hq/yard/prompts/`. Kept until `/ship` proves on a real PRD, then removed (ADR 0008).
+- **[review](./skills/engineering/review/SKILL.md)** — Two-axis review of changes since a fixed point — Standards (repo docs/ADRs) and Spec (originating issue/PRD) — run as parallel sub-agents, reported separately. Invoked by `/ship` at the unit-of-delivered-intent boundary and human-triggered on demand. The dedicated review gate of ADR 0004.
 - **[tdd](./skills/engineering/tdd/SKILL.md)** — Test-driven development with a red-green-refactor loop. Builds features or fixes bugs one vertical slice at a time.
 - **[to-issues](./skills/engineering/to-issues/SKILL.md)** — Break any plan, spec, or PRD into independently-grabbable GitHub issues using vertical slices.
 - **[to-prd](./skills/engineering/to-prd/SKILL.md)** — Turn the current conversation context into a PRD and submit it as a GitHub issue. No interview — just synthesizes what you've already discussed.

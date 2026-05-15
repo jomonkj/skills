@@ -1,108 +1,81 @@
 ---
 name: setup-yard
-description: One-time onboarding of a GitHub repo into the yard fleet orchestrator. Writes `.yard/config.yml` with a unique project code, ensures yard labels via `yard labels-ensure`, then verifies with `./agent doctor` and `./agent plan`. Idempotent — skips anything already present. Fails loud with a fix command if any precondition is wrong. Run once per new repo.
+description: One-time per-repo onboarding into the ship workflow. Registers the repo's project/code/lines via the `yard` CLI, ensures the canonical GitHub labels through `yard labels-ensure` (single source of truth — no hand-rolled colours), and scaffolds the engineering-skill docs (CONTEXT.md, docs/adr template). `--triage` does only the lightweight triage scaffold (labels + docs) for repos that just need the triage/to-issues/to-prd skills, not the full ship workflow. Idempotent — skips anything present. Fails loud with a fix command on any bad precondition. Merged form of the old setup-yard + setup-yolo-skills.
 disable-model-invocation: true
 ---
 
 # Setup Yard
 
-Onboard a repo into the yard fleet so its `Yard`-labelled issues get picked up. Stops only when doctor + plan are green.
+Onboard a repo so its `Yard`-labelled issues get picked up by `/ship`, and so the engineering skills (triage, to-issues, to-prd, …) have what they need. Stops only when every check is green. Idempotent.
+
+Merged successor of the old `setup-yard` + `setup-yolo-skills` (one skill, one `--triage` flag). **All label creation is delegated to `yard labels-ensure`** — this skill never runs `gh label create` itself, so colours/descriptions have exactly one source (ADR 0003/0006).
+
+## Modes
+
+- **Full** (default) — ship workflow: register the project in the registry, ensure the `yard` + `triage` label families, scaffold docs.
+- **`--triage`** — lightweight: only the `triage` label family + docs scaffold. For repos that use `triage`/`to-issues`/`to-prd` but are not driven by `/ship`.
 
 ## Inputs
 
-- Target repo: `$PWD` by default. Override with a path arg (e.g. `/setup-yard /path/to/repo`).
-- Yard clone: required env var `YARD_HOME` pointing at the yard repo (e.g. `~/projects/yolo-hq/yard`).
-
-## What gets created
-
-1. `.yard/config.yml` with `code:` (2-4 char lowercase identifier, derived from the repo dir name; yard fills variant, host_branch, image, test_commands from defaults).
-2. Canonical yard labels in the target repo (via `yard labels-ensure --set yard`):
-   `Yard`, `difficulty:easy/medium/hard`, `need-agent-review`, `priority:highest/high/low/lowest`.
-   Colours and descriptions are owned by yard — see `skills/bin/yard/src/labels.ts`.
+- Target repo: `$PWD` by default; override with a path arg.
+- `yard` CLI on `PATH` (`skills/bin/yard`). Required — this skill is a thin wrapper over it.
 
 ## Process
 
-### 1. Preflight (fail loud, print fix)
-
-Run from the target repo dir. If any check fails, print the failure + the exact command the user should run, then stop. Do NOT auto-fix.
+### 1. Preflight (fail loud, print the fix, do NOT auto-fix)
 
 ```bash
-git rev-parse --is-inside-work-tree                 # must be a git repo
-git remote get-url origin                           # must be a github.com URL
-gh auth status                                      # gh must be authed
-test -n "$YARD_HOME" && test -d "$YARD_HOME"        # yard clone reachable
-test -f "$YARD_HOME/run.ts"                         # looks like a yard clone
+git rev-parse --is-inside-work-tree            # must be a git repo
+git remote get-url origin                      # must be a github.com URL
+gh auth status                                 # gh authed
+command -v yard                                # yard CLI on PATH
 ```
 
-Fix hints to print on failure:
-
-| Check fails | Fix |
+| Fails | Fix to print |
 |---|---|
 | not a git repo | `git init && git remote add origin git@github.com:<owner>/<repo>.git` |
 | no GitHub origin | `git remote set-url origin git@github.com:<owner>/<repo>.git` |
 | gh not authed | `gh auth login` |
-| `$YARD_HOME` unset | `export YARD_HOME=~/projects/yolo-hq/yard` (add to shell rc) |
-| `$YARD_HOME` invalid | `git clone https://github.com/lbrmi/yard $YARD_HOME && cd $YARD_HOME && bun install && bun link` |
+| `yard` missing | build it: `cd skills/bin/yard && bun install && bun link` |
 
-### 2. Pick the project code
+If the repo has multiple remotes, resolve the intended `<owner>/<repo>` explicitly and use it for every `yard`/`gh` call — never operate on an upstream you only meant to read.
 
-Derive the code from the repo's directory name using yard's rule (`<YARD_HOME>/src/project-code.ts`):
-
-- Single word → first 2 chars.
-- Hyphen/underscore-separated → first char of each part, max 3 chars.
-- Must match `/^[a-z0-9]{2,4}$/`.
-
-Check fleet for collisions:
+### 2. Ensure labels (delegated — never hand-rolled)
 
 ```bash
-find "$(dirname "$YARD_HOME")" -maxdepth 3 -path '*/.yard/config.yml' -not -path '*/node_modules/*' \
-  -exec sh -c 'echo "$1: $(grep -E "^code:" "$1" | sed "s/code: *//")"' _ {} \;
+# full mode
+yard labels-ensure --repo <owner>/<repo> --set all
+# --triage mode
+yard labels-ensure --repo <owner>/<repo> --set triage
 ```
 
-If the derived code is already used by another project in the fleet, ask the user for a 2-4 char override. Otherwise use the derived code without asking.
+`yard labels-ensure` is idempotent and the single source of label names/colours/descriptions for both the `triage` family (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) and the `yard` family (`Yard`, `PRD`, `difficulty:*`, `priority:*`, `need-agent-review`, `phase:*`).
 
-### 3. Write `.yard/config.yml`
+### 3. Register the project (full mode only)
 
-Skip if the file already exists (idempotent). Otherwise:
-
-```yaml
-code: <derived-or-chosen>
-```
-
-That's the whole file. Yard fills `variant`, `host_branch`, `image`, `test_commands` at load time. The user can add overrides later.
-
-### 4. Ensure labels
-
-Run `yard labels-ensure` to create or repair the canonical yard label set in the target repo (idempotent — safe to re-run):
+Derive the project `code` (single word → first 2 chars; hyphen/underscore → first char of each, max 3; must match `/^[a-z0-9]{2,4}$/`). If it collides with another project in the registry, ask the user for a 2–4 char override. Then register via the `yard` registry mutators (the only writers of the registry — never hand-edit it):
 
 ```bash
-yard labels-ensure --repo <owner/name> --set yard
+yard project add --project <name>
+yard repo add --project <name> --key <dotted-key> --code <code> --url <origin-url> --line <host-branch> --protected --env prod
 ```
 
-yard owns the canonical label definitions (colours, descriptions). Do not hardcode `gh label create` calls here; yard is the single source of truth (ADR 0003).
+(`--triage` mode skips this step — a triage-only repo is not in the ship registry.)
 
-### 5. Verify with doctor + plan
+### 4. Scaffold docs (both modes, only if missing)
 
-Both must succeed. If either fails, print the output and stop.
+- `CONTEXT.md` (single-context default) — empty glossary stub. Multi-context: `CONTEXT-MAP.md` instead (only if the user says so).
+- `docs/adr/0001-record-architecture-decisions.md` — the standard ADR-0001 template.
 
-```bash
-cd "$YARD_HOME" && bun run agent doctor              # all rows must be ✓
-cd "$YARD_HOME" && bun run agent plan                # must exit 0, project must appear in scan
-```
+Skip any that already exist (idempotent).
 
-### 6. Done
+### 5. Verify + report
 
-Print:
+Full mode: `yard scope all --project <name>` resolves without error and the project appears. `--triage` mode: `gh label list --repo <owner>/<repo>` shows the 5 triage labels. Report created vs skipped. No further config needed — the engineering skills (and `/ship`, in full mode) work in this repo from now on.
 
-- Project code used
-- Which labels were created vs already present
-- Whether `.yard/config.yml` was written vs skipped
-- One-line next step:
+## Rules
 
-```
-File the first issue:
-  yard issue-create --repo <owner>/<repo> \
-    --title "..." --label Yard --label difficulty:easy
-Then run yard:
-  cd $YARD_HOME && ./agent
-```
+- Never `gh label create` directly — always `yard labels-ensure`.
+- Never hand-edit the registry — always `yard` mutators.
+- Idempotent: every step skips what already exists.
+- Fail loud with the exact fix command; do not auto-fix preconditions.
