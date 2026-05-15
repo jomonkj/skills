@@ -7,8 +7,44 @@ export type {
   LabelsEnsureResult,
   LabelChange,
 } from "./handlers/labels-ensure.ts";
-export { labelsEnsureInput, OUTPUT_VERSION } from "./schema.ts";
-export type { LabelsEnsureInput } from "./schema.ts";
+export {
+  registryRead,
+  defaultRegistryFile,
+} from "./handlers/registry-read.ts";
+export type { RegistryReadResult } from "./handlers/registry-read.ts";
+export { init, configDirFor, profileFileFor } from "./handlers/init.ts";
+export type { InitResult } from "./handlers/init.ts";
+export {
+  labelsEnsureInput,
+  registryReadInput,
+  initInput,
+  OUTPUT_VERSION,
+} from "./schema.ts";
+export type {
+  LabelsEnsureInput,
+  RegistryReadInput,
+  InitInput,
+} from "./schema.ts";
+export {
+  registrySchema,
+  repoSchema,
+  lineSchema,
+  needSchema,
+  repoKeyToDir,
+} from "./schemas/registry.ts";
+export type {
+  Registry,
+  Repo,
+  Line,
+  Need,
+} from "./schemas/registry.ts";
+export { profileSchema } from "./schemas/profile.ts";
+export type { Profile } from "./schemas/profile.ts";
+export {
+  DEFAULT_PROTECTED_REGEX,
+  makeProtectedMatcher,
+  isProtected,
+} from "./protected.ts";
 export { canonicalLabels } from "./labels.ts";
 export type { CanonicalLabel, LabelSet } from "./labels.ts";
 export { emitYaml, canonicalize } from "./yaml.ts";

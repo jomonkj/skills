@@ -9,6 +9,8 @@
  * Hard rule: nothing in this file (or anywhere in yard) calls an LLM. Only
  * `git`, `gh`, filesystem, JSON/YAML.
  */
+import { readFile, readdir, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 
 export interface ExecResult {
   /** Process exit code. 0 = success. */
@@ -38,6 +40,19 @@ export interface Adapter {
     repo: string,
     label: { name: string; color: string; description: string },
   ): Promise<void>;
+
+  // --- git / filesystem boundary (ADR 0006: registry + init) ---
+
+  /** `git clone <url> <dir>`. Throws with a clear message on failure. */
+  cloneRepo(url: string, dir: string): Promise<void>;
+  /** Read a UTF-8 file. Throws if absent (caller turns this into a clear error). */
+  readFile(path: string): Promise<string>;
+  /** True if a path (file or dir) exists. */
+  pathExists(path: string): Promise<boolean>;
+  /** Names (not full paths) of entries in a directory. Empty if absent. */
+  listFiles(dir: string): Promise<string[]>;
+  /** The current user's home dir — so `~/.yard/...` is mockable in tests. */
+  homeDir(): string;
 }
 
 /** Run a subprocess and capture its result. The only place yard shells out. */
@@ -125,5 +140,39 @@ export class GhAdapter implements Adapter {
         `gh label edit ${label.name} failed for ${repo}: ${r.stderr.trim()}`,
       );
     }
+  }
+
+  async cloneRepo(url: string, dir: string): Promise<void> {
+    const r = await run(["git", "clone", url, dir]);
+    if (r.code !== 0) {
+      throw new Error(
+        `git clone ${url} -> ${dir} failed: ${r.stderr.trim() || r.stdout.trim()}`,
+      );
+    }
+  }
+
+  async readFile(path: string): Promise<string> {
+    return readFile(path, "utf8");
+  }
+
+  async pathExists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async listFiles(dir: string): Promise<string[]> {
+    try {
+      return (await readdir(dir)).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  homeDir(): string {
+    return homedir();
   }
 }
