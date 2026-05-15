@@ -16,3 +16,22 @@ export const labelsEnsureInput = z.object({
 });
 
 export type LabelsEnsureInput = z.infer<typeof labelsEnsureInput>;
+
+/** `yard registry-read` — read + validate one project's registry file. */
+export const registryReadInput = z.object({
+  /** Path to the project's YAML file in the cloned `yard-config` repo.
+   *  Defaults to `<homeDir>/.yard/config/projects/<project>.yml`. */
+  file: z.string().min(1).optional(),
+  /** Project dir basename. Used to derive the default `file` path. */
+  project: z.string().min(1).optional(),
+});
+export type RegistryReadInput = z.infer<typeof registryReadInput>;
+
+/** `yard init --from <url> --profile <name>`. */
+export const initInput = z.object({
+  /** Git URL of the private `yard-config` registry repo. */
+  from: z.string().min(1, "--from <yard-config-url> is required"),
+  /** Profile name -> `~/.yard/profile.<name>.yml`. */
+  profile: z.string().min(1, "--profile <name> is required"),
+});
+export type InitInput = z.infer<typeof initInput>;

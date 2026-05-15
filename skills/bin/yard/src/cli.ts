@@ -14,7 +14,9 @@
  */
 import { GhAdapter, type Adapter } from "./adapter.ts";
 import { labelsEnsure } from "./handlers/labels-ensure.ts";
-import { labelsEnsureInput } from "./schema.ts";
+import { registryRead } from "./handlers/registry-read.ts";
+import { init } from "./handlers/init.ts";
+import { labelsEnsureInput, registryReadInput, initInput } from "./schema.ts";
 import { emitYaml, type Json } from "./yaml.ts";
 
 const EXIT_OK = 0;
@@ -55,6 +57,8 @@ const USAGE = `yard — deterministic git/gh/label plumbing (ADR 0003)
 
 Usage:
   yard labels-ensure --repo <owner/name> --set triage|yard|all [--dry-run] [--format json|yaml]
+  yard registry-read (--file <path> | --project <name>) [--format json|yaml]
+  yard init --from <yard-config-url> --profile <name> [--format json|yaml]
 
 Global:
   --format json|yaml   output format (default: json)
@@ -97,6 +101,53 @@ export async function main(
             `${result.summary.updated} updated, ` +
             `${result.summary.unchanged} unchanged` +
             (result.dryRun ? " (dry-run)" : ""),
+        );
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "registry-read": {
+      const parsed = registryReadInput.safeParse({
+        file: typeof flags.file === "string" ? flags.file : undefined,
+        project: typeof flags.project === "string" ? flags.project : undefined,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await registryRead(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        const n = Object.keys(result.registry.repos).length;
+        log(`registry-read: ${result.file} ok (${n} repo(s))`);
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "init": {
+      const parsed = initInput.safeParse({
+        from: typeof flags.from === "string" ? flags.from : undefined,
+        profile: typeof flags.profile === "string" ? flags.profile : undefined,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await init(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `init: registry ${result.cloned ? "cloned" : "present"} at ` +
+            `${result.configDir}, profile ${result.profileFile}, ` +
+            `${result.projects.length} project(s)`,
         );
         return EXIT_OK;
       } catch (err) {
