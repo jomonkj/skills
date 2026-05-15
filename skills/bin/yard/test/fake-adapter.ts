@@ -7,12 +7,14 @@
  * test supplies (it seeds files under the clone dir), so `init` is fully
  * testable without git or the network.
  */
-import type { Adapter, GhLabel } from "../src/adapter.ts";
+import type { Adapter, GhIssue, GhLabel } from "../src/adapter.ts";
 
 export class FakeAdapter implements Adapter {
   labels: Map<string, GhLabel>;
   createCalls: { repo: string; label: GhLabel }[] = [];
   editCalls: { repo: string; label: GhLabel }[] = [];
+  issueCalls: { repo: string; issue: { title: string; body: string; labels: string[] } }[] = [];
+  private _nextIssueNumber = 1;
 
   /** Flat in-memory FS: absolute path -> file contents. */
   files = new Map<string, string>();
@@ -48,6 +50,15 @@ export class FakeAdapter implements Adapter {
   ): Promise<void> {
     this.editCalls.push({ repo, label: { ...label } });
     this.labels.set(label.name, { ...label });
+  }
+
+  async createIssue(
+    repo: string,
+    issue: { title: string; body: string; labels: string[] },
+  ): Promise<GhIssue> {
+    this.issueCalls.push({ repo, issue: { ...issue } });
+    const number = this._nextIssueNumber++;
+    return { number, url: `https://github.com/${repo}/issues/${number}` };
   }
 
   async cloneRepo(url: string, dir: string): Promise<void> {

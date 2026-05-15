@@ -27,6 +27,12 @@ export interface GhLabel {
   description: string;
 }
 
+/** A GitHub issue as returned after creation. */
+export interface GhIssue {
+  number: number;
+  url: string;
+}
+
 export interface Adapter {
   /** List labels in a repo. `repo` is `owner/name`. */
   listLabels(repo: string): Promise<GhLabel[]>;
@@ -40,6 +46,11 @@ export interface Adapter {
     repo: string,
     label: { name: string; color: string; description: string },
   ): Promise<void>;
+  /** Create an issue and return its number + URL. */
+  createIssue(
+    repo: string,
+    issue: { title: string; body: string; labels: string[] },
+  ): Promise<GhIssue>;
 
   // --- git / filesystem boundary (ADR 0006: registry + init) ---
 
@@ -140,6 +151,37 @@ export class GhAdapter implements Adapter {
         `gh label edit ${label.name} failed for ${repo}: ${r.stderr.trim()}`,
       );
     }
+  }
+
+  async createIssue(
+    repo: string,
+    issue: { title: string; body: string; labels: string[] },
+  ): Promise<GhIssue> {
+    const args = [
+      "gh",
+      "issue",
+      "create",
+      "--repo",
+      repo,
+      "--title",
+      issue.title,
+      "--body",
+      issue.body,
+    ];
+    for (const label of issue.labels) {
+      args.push("--label", label);
+    }
+    const r = await run(args);
+    if (r.code !== 0) {
+      throw new Error(`gh issue create failed for ${repo}: ${r.stderr.trim()}`);
+    }
+    // gh issue create outputs the issue URL on stdout.
+    const url = r.stdout.trim();
+    const match = url.match(/\/issues\/(\d+)$/);
+    if (!match) {
+      throw new Error(`unexpected gh issue create output: ${url}`);
+    }
+    return { number: parseInt(match[1]!, 10), url };
   }
 
   async cloneRepo(url: string, dir: string): Promise<void> {

@@ -7,7 +7,7 @@ This skill takes the current conversation context and codebase understanding and
 
 **Issue tracker:** GitHub via the `gh` CLI. Repo = `git remote get-url origin` of the current working directory. If no GitHub remote, ask the user how to publish before proceeding.
 
-**Triage labels (canonical, hardcoded):** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. If a label is missing in the target repo, run `gh label create <name>` first, then apply.
+**Triage labels (canonical):** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. Ensure them via `yard labels-ensure --repo <owner/name> --set all`.
 
 **Yard labels (apply to PRDs whose slices will run under the fleet):**
 
@@ -23,14 +23,13 @@ Apply `need-agent-review` to a PRD when **any** of these apply:
 - Security-sensitive
 - More than ~10 slices (hard for a single agent to keep mental model)
 
-If yard labels are missing, create them first:
+If yard labels are missing, ensure them first:
 
 ```bash
-gh label create PRD --color 5319E7 --description "Parent PRD issue"
-gh label create need-agent-review --color 5319E7
+yard labels-ensure --repo <owner/name> --set all
 ```
 
-(The `Yard` label itself is created by the `setup-yard` skill / per-repo onboarding, not here. Slices created from this PRD via `/to-issues` carry `Yard`; the PRD does not.)
+(The `Yard` label itself is created by `setup-yard` / per-repo onboarding, not here. Slices created from this PRD via `/to-issues` carry `Yard`; the PRD does not.)
 
 ## Process
 
@@ -54,10 +53,12 @@ Check with the user that these modules match their expectations. Check with the 
    Example:
 
    ```bash
-   gh issue create \
+   yard issue-create \
+     --repo <owner/name> \
      --title "PRD: <feature name>" \
      --label "PRD" \
      --label "need-agent-review" \
+     --ensure-set all \
      --body "$(cat <<'EOF'
    ... PRD body ...
    EOF

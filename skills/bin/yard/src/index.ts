@@ -14,16 +14,20 @@ export {
 export type { RegistryReadResult } from "./handlers/registry-read.ts";
 export { init, configDirFor, profileFileFor } from "./handlers/init.ts";
 export type { InitResult } from "./handlers/init.ts";
+export { issueCreate } from "./handlers/issue-create.ts";
+export type { IssueCreateResult } from "./handlers/issue-create.ts";
 export {
   labelsEnsureInput,
   registryReadInput,
   initInput,
+  issueCreateInput,
   OUTPUT_VERSION,
 } from "./schema.ts";
 export type {
   LabelsEnsureInput,
   RegistryReadInput,
   InitInput,
+  IssueCreateInput,
 } from "./schema.ts";
 export {
   registrySchema,
@@ -50,4 +54,4 @@ export type { CanonicalLabel, LabelSet } from "./labels.ts";
 export { emitYaml, canonicalize } from "./yaml.ts";
 export type { Json } from "./yaml.ts";
 export { GhAdapter } from "./adapter.ts";
-export type { Adapter, GhLabel } from "./adapter.ts";
+export type { Adapter, GhIssue, GhLabel } from "./adapter.ts";

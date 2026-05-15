@@ -23,8 +23,13 @@ export interface CanonicalLabel {
 
 export type LabelSet = "triage" | "yard" | "all";
 
-/** Fleet labels — verbatim from setup-yard/SKILL.md §4. */
+/** Fleet labels — verbatim from setup-yard/SKILL.md §4 plus PRD marker. */
 const YARD_LABELS: CanonicalLabel[] = [
+  {
+    name: "PRD",
+    color: "5319E7",
+    description: "Parent PRD issue",
+  },
   {
     name: "Yard",
     color: "1D76DB",

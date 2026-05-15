@@ -1,6 +1,6 @@
 ---
 name: setup-yard
-description: One-time onboarding of a GitHub repo into the yard fleet orchestrator. Writes `.yard/config.yml` with a unique project code, creates the 9 GitHub labels yard expects (Yard, difficulty:*, need-agent-review, priority:*), then verifies with `./agent doctor` and `./agent plan`. Idempotent — skips anything already present. Fails loud with a fix command if any precondition is wrong. Run once per new repo.
+description: One-time onboarding of a GitHub repo into the yard fleet orchestrator. Writes `.yard/config.yml` with a unique project code, ensures yard labels via `yard labels-ensure`, then verifies with `./agent doctor` and `./agent plan`. Idempotent — skips anything already present. Fails loud with a fix command if any precondition is wrong. Run once per new repo.
 disable-model-invocation: true
 ---
 
@@ -16,11 +16,9 @@ Onboard a repo into the yard fleet so its `Yard`-labelled issues get picked up. 
 ## What gets created
 
 1. `.yard/config.yml` with `code:` (2-4 char lowercase identifier, derived from the repo dir name; yard fills variant, host_branch, image, test_commands from defaults).
-2. 9 GitHub labels in the target repo:
-   - `Yard` — the sentinel label yard collects on
-   - `difficulty:easy`, `difficulty:medium`, `difficulty:hard`
-   - `need-agent-review`
-   - `priority:highest`, `priority:high`, `priority:low`, `priority:lowest`
+2. Canonical yard labels in the target repo (via `yard labels-ensure --set yard`):
+   `Yard`, `difficulty:easy/medium/hard`, `need-agent-review`, `priority:highest/high/low/lowest`.
+   Colours and descriptions are owned by yard — see `skills/bin/yard/src/labels.ts`.
 
 ## Process
 
@@ -73,23 +71,15 @@ code: <derived-or-chosen>
 
 That's the whole file. Yard fills `variant`, `host_branch`, `image`, `test_commands` at load time. The user can add overrides later.
 
-### 4. Create missing labels
+### 4. Ensure labels
 
-For each of the 9 labels not in `gh label list`, create it:
+Run `yard labels-ensure` to create or repair the canonical yard label set in the target repo (idempotent — safe to re-run):
 
 ```bash
-gh label create "Yard"               --color 1D76DB --description "Issues processed by the yard fleet"
-gh label create "difficulty:easy"    --color C2E0C6 --description "Small change, low risk"
-gh label create "difficulty:medium"  --color FBCA04 --description "Moderate change"
-gh label create "difficulty:hard"    --color D93F0B --description "Large or risky change"
-gh label create "need-agent-review"  --color 5319E7 --description "Opt into second-pass reviewer"
-gh label create "priority:highest"   --color B60205 --description "Top of queue"
-gh label create "priority:high"      --color D93F0B --description "High priority"
-gh label create "priority:low"       --color C5DEF5 --description "Low priority"
-gh label create "priority:lowest"    --color CCCCCC --description "Bottom of queue"
+yard labels-ensure --repo <owner/name> --set yard
 ```
 
-Errors of the form "label already exists" are ignored.
+yard owns the canonical label definitions (colours, descriptions). Do not hardcode `gh label create` calls here; yard is the single source of truth (ADR 0003).
 
 ### 5. Verify with doctor + plan
 
@@ -111,8 +101,8 @@ Print:
 
 ```
 File the first issue:
-  gh issue create --repo <owner>/<repo> \
-    --title "..." --label Yard --label difficulty:easy --body "..."
+  yard issue-create --repo <owner>/<repo> \
+    --title "..." --label Yard --label difficulty:easy
 Then run yard:
   cd $YARD_HOME && ./agent
 ```

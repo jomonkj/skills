@@ -87,4 +87,93 @@ describe("CLI transport", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("error: gh exploded");
   });
+
+  test("issue-create end-to-end: argv -> handler -> versioned JSON stdout", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() =>
+      main(
+        [
+          "issue-create",
+          "--repo",
+          "lbrmi/skills",
+          "--title",
+          "Test issue",
+          "--label",
+          "Yard",
+          "--label",
+          "difficulty:medium",
+          "--ensure-set",
+          "none",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.version).toBe(1);
+    expect(parsed.command).toBe("issue-create");
+    expect(parsed.number).toBe(1);
+    expect(parsed.title).toBe("Test issue");
+    expect(parsed.labels).toEqual(["Yard", "difficulty:medium"]);
+    expect(r.stderr).toContain("issue-create: #1");
+  });
+
+  test("issue-create with --parent prepends ## Parent section", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() =>
+      main(
+        [
+          "issue-create",
+          "--repo",
+          "lbrmi/skills",
+          "--title",
+          "Child",
+          "--body",
+          "## What to build\n\nStuff.",
+          "--parent",
+          "3",
+          "--ensure-set",
+          "none",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const body = fa.issueCalls[0]!.issue.body;
+    expect(body).toMatch(/^## Parent\n#3\n\n/);
+  });
+
+  test("issue-create --dry-run -> exit 0, no issue created", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() =>
+      main(
+        [
+          "issue-create",
+          "--repo",
+          "lbrmi/skills",
+          "--title",
+          "Dry",
+          "--dry-run",
+          "--ensure-set",
+          "none",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.number).toBeNull();
+    expect(fa.issueCalls.length).toBe(0);
+    expect(r.stderr).toContain("dry-run");
+  });
+
+  test("issue-create missing --title -> exit 2", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() =>
+      main(["issue-create", "--repo", "lbrmi/skills"], fa),
+    );
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("usage error");
+  });
 });
