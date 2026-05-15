@@ -1,0 +1,36 @@
+name: yard CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "skills/bin/yard/**"
+      - ".github/workflows/yard-ci.yml"
+  pull_request:
+    paths:
+      - "skills/bin/yard/**"
+      - ".github/workflows/yard-ci.yml"
+
+jobs:
+  test:
+    name: typecheck + unit + e2e
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skills/bin/yard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test (unit + e2e)
+        run: bun test
