@@ -284,4 +284,86 @@ describe("CLI transport", () => {
     const r = await capture(() => main(["project", "frobnicate"], fa));
     expect(r.code).toBe(2);
   });
+
+  const REG_FILE = "/home/test/.yard/config/projects/demo.yml";
+  const REG = `repos:
+  skills:
+    code: sk
+    url: git@github.com:lbrmi/skills.git
+    lines: { main: { protected: true } }
+`;
+
+  test("scope <expr> end-to-end: positional expr -> sorted JSON", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setFile(REG_FILE, REG);
+    fa.seedIssues("lbrmi/skills", [
+      { number: 2, title: "b", state: "OPEN", labels: ["Yard"], body: "" },
+      { number: 1, title: "a", state: "OPEN", labels: ["Yard"], body: "" },
+    ]);
+    const r = await capture(() =>
+      main(["scope", "all", "--file", REG_FILE], fa),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("scope");
+    expect(parsed.issues.map((x: { number: number }) => x.number)).toEqual([
+      1, 2,
+    ]);
+    expect(r.stderr).toContain("scope:");
+  });
+
+  test("scope missing expr -> exit 2", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() => main(["scope", "--file", REG_FILE], fa));
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("usage error");
+  });
+
+  test("deps <expr> end-to-end: batches in JSON", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setFile(REG_FILE, REG);
+    fa.seedIssues("lbrmi/skills", [
+      { number: 1, title: "a", state: "OPEN", labels: ["Yard"], body: "" },
+      {
+        number: 2,
+        title: "b",
+        state: "OPEN",
+        labels: ["Yard"],
+        body: "## Blocked by\n- #1",
+      },
+    ]);
+    const r = await capture(() =>
+      main(["deps", "all", "--file", REG_FILE], fa),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("deps");
+    expect(parsed.batches).toEqual([["lbrmi/skills#1"], ["lbrmi/skills#2"]]);
+  });
+
+  test("deps cycle -> exit 1 with named cycle on stderr", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setFile(REG_FILE, REG);
+    fa.seedIssues("lbrmi/skills", [
+      {
+        number: 1,
+        title: "a",
+        state: "OPEN",
+        labels: ["Yard"],
+        body: "## Blocked by\n- #2",
+      },
+      {
+        number: 2,
+        title: "b",
+        state: "OPEN",
+        labels: ["Yard"],
+        body: "## Blocked by\n- #1",
+      },
+    ]);
+    const r = await capture(() =>
+      main(["deps", "all", "--file", REG_FILE], fa),
+    );
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("cycle detected:");
+  });
 });

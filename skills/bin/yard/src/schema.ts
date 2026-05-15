@@ -162,3 +162,46 @@ export const issueCreateInput = z.object({
 });
 
 export type IssueCreateInput = z.infer<typeof issueCreateInput>;
+
+/** Issue-state filter shared by `scope` and `deps`. */
+export const issueStateEnum = z.enum(["open", "closed", "all"]);
+
+/**
+ * `yard scope <expr>` — resolve a scope expression to a deterministic,
+ * sorted list of issues across the registry's repos.
+ *
+ * Expr grammar (exactly one form):
+ *   - `prd:`            issues labelled `PRD`
+ *   - `label:<name>`    issues with label <name>
+ *   - `issue:<ref>`     a single issue; <ref> is `owner/repo#N` or `#N`
+ *                       (bare `#N` needs --repo as the default repo)
+ *   - `all`             every issue across registry repos
+ */
+export const scopeInput = z.object({
+  /** The scope expression (see grammar above). */
+  expr: z.string().min(1, "scope expression is required"),
+  /** Registry file to read repos from (passed through to registry-read). */
+  file: z.string().min(1).optional(),
+  /** Project name to derive the registry file (passed to registry-read). */
+  project: z.string().min(1).optional(),
+  /** Default repo (`owner/name`) for a bare `issue:#N` expr. */
+  repo: z.string().min(1).optional(),
+  /** Issue state filter. Default "open". */
+  state: issueStateEnum.default("open"),
+});
+export type ScopeInput = z.infer<typeof scopeInput>;
+
+/**
+ * `yard deps --scope <expr>` — resolve a scope, parse each issue's
+ * `## Blocked by` section, resolve each blocker's state in its own repo,
+ * and return topo-ordered batches. Cycles fail loud, named.
+ */
+export const depsInput = z.object({
+  /** Scope expression whose issues form the dependency graph. */
+  expr: z.string().min(1, "scope expression is required"),
+  file: z.string().min(1).optional(),
+  project: z.string().min(1).optional(),
+  repo: z.string().min(1).optional(),
+  state: issueStateEnum.default("open"),
+});
+export type DepsInput = z.infer<typeof depsInput>;
