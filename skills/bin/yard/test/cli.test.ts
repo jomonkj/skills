@@ -366,4 +366,82 @@ describe("CLI transport", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("cycle detected:");
   });
+
+  test("ensure end-to-end: argv -> handler -> versioned JSON, clones", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setFile("/home/test/.yard/profile.me.yml", "root: /work\n");
+    fa.setFile(
+      "/home/test/.yard/config/projects/demo.yml",
+      `repos:
+  app:
+    code: ap
+    url: git@github.com:lbrmi/app.git
+    lines: { main: {} }
+`,
+    );
+    fa.seedIssues("lbrmi/app", [
+      { number: 1, title: "x", state: "OPEN", labels: ["Yard"], body: "" },
+    ]);
+    const r = await capture(() =>
+      main(
+        [
+          "ensure",
+          "label:Yard",
+          "--project",
+          "demo",
+          "--profile",
+          "me",
+          "--file",
+          "/home/test/.yard/config/projects/demo.yml",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("ensure");
+    expect(parsed.version).toBe(1);
+    expect(parsed.outcomes[0].status).toBe("cloned");
+    expect(r.stderr).toContain("ensure:");
+  });
+
+  test("ensure missing required flags is a usage error (exit 2)", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() => main(["ensure", "label:Yard"], fa));
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("usage error");
+  });
+
+  test("doctor end-to-end: reports missing line dir", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setFile("/home/test/.yard/profile.me.yml", "root: /work\n");
+    fa.setFile(
+      "/home/test/.yard/config/projects/demo.yml",
+      `repos:
+  app:
+    code: ap
+    url: git@github.com:lbrmi/app.git
+    lines: { main: {} }
+`,
+    );
+    const r = await capture(() =>
+      main(
+        [
+          "doctor",
+          "--project",
+          "demo",
+          "--profile",
+          "me",
+          "--file",
+          "/home/test/.yard/config/projects/demo.yml",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("doctor");
+    expect(parsed.drift[0].kind).toBe("missing");
+    expect(r.stderr).toContain("doctor:");
+  });
 });

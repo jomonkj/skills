@@ -102,6 +102,15 @@ export interface Adapter {
    * Throws with a clear message if the command exits non-zero.
    */
   runGit(dir: string, args: string[]): Promise<void>;
+
+  /**
+   * Run a git command in `dir` and return its captured result WITHOUT
+   * throwing on a non-zero exit. Needed by `ensure`/`doctor` to inspect an
+   * existing clone (its remote URL, current branch) so they can decide
+   * "present + correct" vs drift — a void/throwing `runGit` cannot answer
+   * that question (ADR 0006: idempotent ensure, doctor reconciles drift).
+   */
+  runGitCapture(dir: string, args: string[]): Promise<ExecResult>;
 }
 
 /** Run a subprocess and capture its result. The only place yard shells out. */
@@ -358,5 +367,9 @@ export class GhAdapter implements Adapter {
         `git -C ${dir} ${args.join(" ")} failed: ${r.stderr.trim() || r.stdout.trim()}`,
       );
     }
+  }
+
+  async runGitCapture(dir: string, args: string[]): Promise<ExecResult> {
+    return run(["git", "-C", dir, ...args]);
   }
 }

@@ -50,6 +50,18 @@ export type {
 } from "./handlers/scope.ts";
 export { deps, CycleError } from "./handlers/deps.ts";
 export type { DepsResult, DepsNode } from "./handlers/deps.ts";
+export { ensure } from "./handlers/ensure.ts";
+export type {
+  EnsureResult,
+  PlannedClone,
+  CloneOutcome,
+} from "./handlers/ensure.ts";
+export { doctor } from "./handlers/doctor.ts";
+export type {
+  DoctorResult,
+  DriftItem,
+  DriftKind,
+} from "./handlers/doctor.ts";
 export { parseBlockedBy } from "./blocked-by.ts";
 export type { BlockerRef } from "./blocked-by.ts";
 export { repoSlugFromUrl } from "./repo-url.ts";
@@ -68,6 +80,8 @@ export {
   projectSyncInput,
   scopeInput,
   depsInput,
+  ensureInput,
+  doctorInput,
   issueStateEnum,
   OUTPUT_VERSION,
 } from "./schema.ts";
@@ -86,6 +100,8 @@ export type {
   ProjectSyncInput,
   ScopeInput,
   DepsInput,
+  EnsureInput,
+  DoctorInput,
 } from "./schema.ts";
 export {
   registrySchema,

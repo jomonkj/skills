@@ -13,6 +13,7 @@
  */
 import type {
   Adapter,
+  ExecResult,
   GhIssue,
   GhLabel,
   IssueState,
@@ -52,6 +53,22 @@ export class FakeAdapter implements Adapter {
 
   /** Records all `runGit` calls in order. */
   gitCalls: { dir: string; args: string[] }[] = [];
+  /** Records all `runGitCapture` calls in order. */
+  gitCaptureCalls: { dir: string; args: string[] }[] = [];
+
+  /**
+   * Per-clone-dir simulated git state, used by `runGitCapture` so tests can
+   * drive ensure-idempotency and doctor-drift without a real repo:
+   *   `origin remote URL`  -> remote.origin.url
+   *   `current branch`     -> branch --show-current
+   * A dir absent here means "not a git repo" (capture returns code 128).
+   */
+  gitState = new Map<string, { remote: string; branch: string }>();
+
+  /** Test helper: declare an existing clone's remote URL + current branch. */
+  setGitState(dir: string, remote: string, branch: string): void {
+    this.gitState.set(dir, { remote, branch });
+  }
 
   constructor(initial: GhLabel[] = []) {
     this.labels = new Map(initial.map((l) => [l.name, { ...l }]));
@@ -192,5 +209,29 @@ export class FakeAdapter implements Adapter {
 
   async runGit(dir: string, args: string[]): Promise<void> {
     this.gitCalls.push({ dir, args: [...args] });
+    // Simulate `git checkout <branch>` / `git -c ... clone` side-effects so
+    // a fresh ensure leaves the clone on the right branch for re-ensure.
+    if (args[0] === "checkout" && args[1]) {
+      const st = this.gitState.get(dir) ?? { remote: "", branch: "" };
+      this.gitState.set(dir, { ...st, branch: args[1]! });
+    }
+  }
+
+  async runGitCapture(dir: string, args: string[]): Promise<ExecResult> {
+    this.gitCaptureCalls.push({ dir, args: [...args] });
+    const st = this.gitState.get(dir);
+    if (!st) {
+      return { code: 128, stdout: "", stderr: "not a git repository" };
+    }
+    if (args[0] === "remote" && args[1] === "get-url") {
+      return { code: 0, stdout: st.remote + "\n", stderr: "" };
+    }
+    if (
+      (args[0] === "branch" && args[1] === "--show-current") ||
+      (args[0] === "rev-parse" && args.includes("--abbrev-ref"))
+    ) {
+      return { code: 0, stdout: st.branch + "\n", stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
   }
 }
