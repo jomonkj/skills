@@ -13,10 +13,13 @@
  */
 import type {
   Adapter,
+  CheckStatus,
   ExecResult,
   GhIssue,
   GhLabel,
+  GhPr,
   IssueState,
+  WorktreeEntry,
 } from "../src/adapter.ts";
 
 /** A seeded issue for scope/deps tests. */
@@ -68,6 +71,58 @@ export class FakeAdapter implements Adapter {
   /** Test helper: declare an existing clone's remote URL + current branch. */
   setGitState(dir: string, remote: string, branch: string): void {
     this.gitState.set(dir, { remote, branch });
+  }
+
+  // --- dispatch / ci-wait / sweep test state ---
+
+  /** Recorded `editIssue` calls (atomic label moves). */
+  editIssueCalls: {
+    repo: string;
+    number: number;
+    change: { addLabels?: string[]; removeLabels?: string[] };
+  }[] = [];
+  /** Per-issue current labels for editIssue/getIssue round-trips (`repo#N`). */
+  private _issueLabels = new Map<string, string[]>();
+  /** Per-(repo#N#label) apply time (epoch ms). */
+  private _labeledAt = new Map<string, number>();
+  /** Worktrees per repoDir. */
+  worktrees = new Map<string, WorktreeEntry[]>();
+  addWorktreeCalls: { repoDir: string; path: string; branch: string; base: string }[] = [];
+  removeWorktreeCalls: { repoDir: string; path: string }[] = [];
+  deleteBranchCalls: { repoDir: string; branch: string }[] = [];
+  /** PRs by `repo#N`. */
+  prs = new Map<string, GhPr>();
+  /** Check status by `repo#N`, or a queue to simulate pending->passing. */
+  checkStatus = new Map<string, CheckStatus | CheckStatus[]>();
+  /** Repos/PRs whose prChecks should throw (transient-error tests). */
+  prChecksFailUntil = new Map<string, number>();
+  prChecksCalls: { repo: string; number: number }[] = [];
+  /** Virtual clock + recorded sleeps. */
+  private _now = 1_700_000_000_000;
+  sleepCalls: number[] = [];
+
+  setNow(ms: number): void {
+    this._now = ms;
+  }
+  advance(ms: number): void {
+    this._now += ms;
+  }
+
+  /** Seed an issue's label set + (optionally) when phase:implementing applied. */
+  setIssueLabels(repo: string, number: number, labels: string[]): void {
+    this._issueLabels.set(`${repo}#${number}`, [...labels]);
+  }
+  setLabeledAt(repo: string, number: number, label: string, at: number): void {
+    this._labeledAt.set(`${repo}#${number}#${label}`, at);
+  }
+  setWorktrees(repoDir: string, entries: WorktreeEntry[]): void {
+    this.worktrees.set(repoDir, entries.map((e) => ({ ...e })));
+  }
+  setPr(repo: string, pr: GhPr): void {
+    this.prs.set(`${repo}#${pr.number}`, { ...pr });
+  }
+  setChecks(repo: string, prNum: number, s: CheckStatus | CheckStatus[]): void {
+    this.checkStatus.set(`${repo}#${prNum}`, Array.isArray(s) ? [...s] : s);
   }
 
   constructor(initial: GhLabel[] = []) {
@@ -150,9 +205,23 @@ export class FakeAdapter implements Adapter {
         `gh issue view ${number} failed for ${repo}: simulated failure`,
       );
     }
+    const overlayKey = `${repo}#${number}`;
+    const overlayLabels = this._issueLabels.get(overlayKey);
     const all = this.issues.get(repo) ?? [];
     const found = all.find((i) => i.number === number);
     if (!found) {
+      // Dispatch tests often only set labels (no full seed). Synthesize a
+      // minimal OPEN issue when an overlay exists.
+      if (overlayLabels !== undefined) {
+        return {
+          number,
+          url: `https://github.com/${repo}/issues/${number}`,
+          title: `issue ${number}`,
+          state: "OPEN",
+          labels: [...overlayLabels],
+          body: "",
+        };
+      }
       throw new Error(`gh issue view ${number} failed for ${repo}: not found`);
     }
     return {
@@ -160,9 +229,108 @@ export class FakeAdapter implements Adapter {
       url: `https://github.com/${repo}/issues/${found.number}`,
       title: found.title,
       state: found.state,
-      labels: [...found.labels],
+      labels: overlayLabels ? [...overlayLabels] : [...found.labels],
       body: found.body,
     };
+  }
+
+  async editIssue(
+    repo: string,
+    number: number,
+    change: { addLabels?: string[]; removeLabels?: string[] },
+  ): Promise<void> {
+    this.editIssueCalls.push({
+      repo,
+      number,
+      change: {
+        addLabels: change.addLabels ? [...change.addLabels] : undefined,
+        removeLabels: change.removeLabels ? [...change.removeLabels] : undefined,
+      },
+    });
+    const add = change.addLabels ?? [];
+    const remove = change.removeLabels ?? [];
+    if (add.length === 0 && remove.length === 0) return; // no gh call
+    const key = `${repo}#${number}`;
+    const cur = new Set(this._issueLabels.get(key) ?? []);
+    for (const l of remove) cur.delete(l);
+    for (const l of add) {
+      cur.add(l);
+      this._labeledAt.set(`${key}#${l}`, this._now);
+    }
+    this._issueLabels.set(key, [...cur]);
+  }
+
+  async issueLabeledAt(
+    repo: string,
+    number: number,
+    label: string,
+  ): Promise<number | null> {
+    return this._labeledAt.get(`${repo}#${number}#${label}`) ?? null;
+  }
+
+  async findPr(repo: string, headBranch: string): Promise<GhPr | null> {
+    for (const pr of this.prs.values()) {
+      if (pr.headRefName === headBranch) return { ...pr };
+    }
+    return null;
+  }
+
+  async prState(repo: string, number: number): Promise<GhPr> {
+    const pr = this.prs.get(`${repo}#${number}`);
+    if (!pr) throw new Error(`gh pr view ${number} failed for ${repo}: not found`);
+    return { ...pr };
+  }
+
+  async prChecks(repo: string, number: number): Promise<CheckStatus> {
+    this.prChecksCalls.push({ repo, number });
+    const failUntil = this.prChecksFailUntil.get(`${repo}#${number}`);
+    if (failUntil !== undefined && this.prChecksCalls.length <= failUntil) {
+      throw new Error(`gh pr checks ${number} failed for ${repo}: simulated`);
+    }
+    const v = this.checkStatus.get(`${repo}#${number}`);
+    if (v === undefined) return "none";
+    if (Array.isArray(v)) {
+      // Consume one step per call; last value sticks.
+      return v.length > 1 ? (v.shift() as CheckStatus) : (v[0] as CheckStatus);
+    }
+    return v;
+  }
+
+  async addWorktree(
+    repoDir: string,
+    path: string,
+    branch: string,
+    base: string,
+  ): Promise<void> {
+    this.addWorktreeCalls.push({ repoDir, path, branch, base });
+    const list = this.worktrees.get(repoDir) ?? [];
+    list.push({ path, branch });
+    this.worktrees.set(repoDir, list);
+  }
+
+  async removeWorktree(repoDir: string, path: string): Promise<void> {
+    this.removeWorktreeCalls.push({ repoDir, path });
+    const list = (this.worktrees.get(repoDir) ?? []).filter(
+      (w) => w.path !== path,
+    );
+    this.worktrees.set(repoDir, list);
+  }
+
+  async listWorktrees(repoDir: string): Promise<WorktreeEntry[]> {
+    return (this.worktrees.get(repoDir) ?? []).map((w) => ({ ...w }));
+  }
+
+  async deleteBranch(repoDir: string, branch: string): Promise<void> {
+    this.deleteBranchCalls.push({ repoDir, branch });
+  }
+
+  now(): number {
+    return this._now;
+  }
+
+  async sleep(ms: number): Promise<void> {
+    this.sleepCalls.push(ms);
+    this._now += ms; // virtual time advances on sleep
   }
 
   async cloneRepo(url: string, dir: string): Promise<void> {

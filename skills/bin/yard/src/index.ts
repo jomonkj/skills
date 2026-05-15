@@ -62,6 +62,39 @@ export type {
   DriftItem,
   DriftKind,
 } from "./handlers/doctor.ts";
+export {
+  dispatchInit,
+  branchName,
+  worktreePath,
+} from "./handlers/dispatch-init.ts";
+export type {
+  DispatchInitResult,
+  DispatchInitAction,
+} from "./handlers/dispatch-init.ts";
+export { dispatchDone } from "./handlers/dispatch-done.ts";
+export type { DispatchDoneResult } from "./handlers/dispatch-done.ts";
+export { ciWait } from "./handlers/ci-wait.ts";
+export type { CiWaitResult, CiWaitStatus } from "./handlers/ci-wait.ts";
+export { sweep } from "./handlers/sweep.ts";
+export type {
+  SweepResult,
+  SweepItem,
+  SweepDecision,
+} from "./handlers/sweep.ts";
+export {
+  PHASE_QUEUED,
+  PHASE_IMPLEMENTING,
+  PHASE_AWAITING_HUMAN_MERGE,
+  PHASE_HITL,
+  PHASE_FAILED,
+  PHASE_DONE,
+  ALL_PHASES,
+  TERMINAL_PHASES,
+  KEEP_FOR_INSPECTION,
+  STALE_LOCK_MS,
+  currentPhase,
+} from "./phases.ts";
+export type { Phase } from "./phases.ts";
 export { parseBlockedBy } from "./blocked-by.ts";
 export type { BlockerRef } from "./blocked-by.ts";
 export { repoSlugFromUrl } from "./repo-url.ts";
@@ -82,6 +115,11 @@ export {
   depsInput,
   ensureInput,
   doctorInput,
+  dispatchInitInput,
+  dispatchDoneInput,
+  dispatchOutcomeEnum,
+  ciWaitInput,
+  sweepInput,
   issueStateEnum,
   OUTPUT_VERSION,
 } from "./schema.ts";
@@ -102,6 +140,11 @@ export type {
   DepsInput,
   EnsureInput,
   DoctorInput,
+  DispatchInitInput,
+  DispatchDoneInput,
+  DispatchOutcome,
+  CiWaitInput,
+  SweepInput,
 } from "./schema.ts";
 export {
   registrySchema,

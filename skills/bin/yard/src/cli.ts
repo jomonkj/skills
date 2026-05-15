@@ -31,6 +31,10 @@ import { scope } from "./handlers/scope.ts";
 import { deps, CycleError } from "./handlers/deps.ts";
 import { ensure } from "./handlers/ensure.ts";
 import { doctor } from "./handlers/doctor.ts";
+import { dispatchInit } from "./handlers/dispatch-init.ts";
+import { dispatchDone } from "./handlers/dispatch-done.ts";
+import { ciWait } from "./handlers/ci-wait.ts";
+import { sweep } from "./handlers/sweep.ts";
 import {
   labelsEnsureInput,
   registryReadInput,
@@ -48,6 +52,10 @@ import {
   depsInput,
   ensureInput,
   doctorInput,
+  dispatchInitInput,
+  dispatchDoneInput,
+  ciWaitInput,
+  sweepInput,
 } from "./schema.ts";
 import { emitYaml, type Json } from "./yaml.ts";
 
@@ -121,6 +129,17 @@ Usage:
                       [--format json|yaml]
   yard doctor         --project <name> --profile <name> [--file <path>] [--fix]
                       [--format json|yaml]
+
+Ship-only (ADR 0003/0005/0007) — used by /ship:
+  yard dispatch-init  --repo <owner/name> --issue <N> --code <code>
+                      --repo-dir <path> [--base <ref>] [--format json|yaml]
+  yard dispatch-done  --repo <owner/name> --issue <N> --code <code>
+                      --repo-dir <path> --outcome merged|awaiting-human-merge|hitl|failed
+                      [--protected-pattern <regex>]... [--format json|yaml]
+  yard ci-wait        --repo <owner/name> --pr <N>
+                      [--interval <sec>] [--timeout <sec>] [--format json|yaml]
+  yard sweep          --repo <owner/name> --repo-dir <path> --code <code>
+                      [--protected-pattern <regex>]... [--dry-run] [--format json|yaml]
 
   <expr> is one of:  prd:  |  label:<name>  |  issue:owner/repo#N  |  issue:#N  |  all
 
@@ -611,6 +630,137 @@ export async function main(
           `doctor: ${result.ok} ok, ${result.drift.length} drift item(s)` +
             (result.fixed ? ` (${result.drift.length - unfixed} fixed)` : "") +
             (unfixed > 0 ? ` — ${unfixed} need attention` : ""),
+        );
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "dispatch-init": {
+      const issueNum =
+        typeof flags.issue === "string" ? parseInt(flags.issue, 10) : NaN;
+      const parsed = dispatchInitInput.safeParse({
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        issue: Number.isNaN(issueNum) ? undefined : issueNum,
+        code: typeof flags.code === "string" ? flags.code : undefined,
+        repoDir: typeof flags["repo-dir"] === "string" ? flags["repo-dir"] : undefined,
+        base: typeof flags.base === "string" ? flags.base : "main",
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log(""); log(USAGE); return EXIT_USAGE;
+      }
+      try {
+        const result = await dispatchInit(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `dispatch-init: ${result.action} ${result.repo}#${result.issue} ` +
+            `-> ${result.branch} @ ${result.worktree} (target ${result.target})`,
+        );
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "dispatch-done": {
+      const issueNum =
+        typeof flags.issue === "string" ? parseInt(flags.issue, 10) : NaN;
+      const rawPat = flags["protected-pattern"];
+      const protectedPatterns: string[] = Array.isArray(rawPat)
+        ? rawPat
+        : typeof rawPat === "string"
+          ? [rawPat]
+          : [];
+      const parsed = dispatchDoneInput.safeParse({
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        issue: Number.isNaN(issueNum) ? undefined : issueNum,
+        code: typeof flags.code === "string" ? flags.code : undefined,
+        repoDir: typeof flags["repo-dir"] === "string" ? flags["repo-dir"] : undefined,
+        outcome: typeof flags.outcome === "string" ? flags.outcome : undefined,
+        protectedPatterns,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log(""); log(USAGE); return EXIT_USAGE;
+      }
+      try {
+        const result = await dispatchDone(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `dispatch-done: ${result.repo}#${result.issue} -> ${result.phase}` +
+            (result.worktreeRemoved ? ", worktree removed" : "") +
+            (result.branchDeleted ? ", branch deleted" : "") +
+            (result.protectedRefusal ? ` — ${result.protectedRefusal}` : ""),
+        );
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "ci-wait": {
+      const prNum =
+        typeof flags.pr === "string" ? parseInt(flags.pr, 10) : NaN;
+      const intervalSec =
+        typeof flags.interval === "string" ? parseInt(flags.interval, 10) : 30;
+      const timeoutSec =
+        typeof flags.timeout === "string" ? parseInt(flags.timeout, 10) : 900;
+      const parsed = ciWaitInput.safeParse({
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        pr: Number.isNaN(prNum) ? undefined : prNum,
+        intervalSec: Number.isNaN(intervalSec) ? 30 : intervalSec,
+        timeoutSec: Number.isNaN(timeoutSec) ? 900 : timeoutSec,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log(""); log(USAGE); return EXIT_USAGE;
+      }
+      try {
+        const result = await ciWait(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `ci-wait: ${result.status} after ${result.polls} poll(s), ` +
+            `${result.transientErrors} transient error(s), ` +
+            `${Math.round(result.elapsedMs / 1000)}s`,
+        );
+        // A failing or timed-out gate is a non-zero exit so the shell caller
+        // can branch without parsing JSON.
+        return result.status === "failing" || result.status === "timed-out"
+          ? EXIT_ERR
+          : EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "sweep": {
+      const rawPat = flags["protected-pattern"];
+      const protectedPatterns: string[] = Array.isArray(rawPat)
+        ? rawPat
+        : typeof rawPat === "string"
+          ? [rawPat]
+          : [];
+      const parsed = sweepInput.safeParse({
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        repoDir: typeof flags["repo-dir"] === "string" ? flags["repo-dir"] : undefined,
+        code: typeof flags.code === "string" ? flags.code : undefined,
+        protectedPatterns,
+        dryRun: flags["dry-run"] === true,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log(""); log(USAGE); return EXIT_USAGE;
+      }
+      try {
+        const result = await sweep(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        log(
+          `sweep: ${result.summary.removed} removed, ` +
+            `${result.summary.kept} kept, ` +
+            `${result.summary.protectedBranches} protected-branch refusal(s)` +
+            (result.dryRun ? " (dry-run)" : ""),
         );
         return EXIT_OK;
       } catch (err) {

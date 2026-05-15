@@ -285,6 +285,91 @@ describe("CLI transport", () => {
     expect(r.code).toBe(2);
   });
 
+  test("dispatch-init via CLI: argv -> handler -> versioned JSON", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setIssueLabels("lbrmi/skills", 10, ["phase:queued"]);
+    const r = await capture(() =>
+      main(
+        [
+          "dispatch-init",
+          "--repo", "lbrmi/skills",
+          "--issue", "10",
+          "--code", "sk",
+          "--repo-dir", "/work/sk_main",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("dispatch-init");
+    expect(parsed.branch).toBe("yd/sk/issue-10");
+    expect(parsed.action).toBe("dispatched");
+  });
+
+  test("dispatch-done merged via CLI tears down", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setIssueLabels("lbrmi/skills", 10, ["phase:implementing"]);
+    fa.setWorktrees("/work/sk_main", [
+      { path: "/work/sk_main/.yard/worktrees/yd-sk-issue-10", branch: "yd/sk/issue-10" },
+    ]);
+    const r = await capture(() =>
+      main(
+        [
+          "dispatch-done",
+          "--repo", "lbrmi/skills",
+          "--issue", "10",
+          "--code", "sk",
+          "--repo-dir", "/work/sk_main",
+          "--outcome", "merged",
+        ],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).branchDeleted).toBe(true);
+  });
+
+  test("ci-wait clean via CLI -> exit 0", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() =>
+      main(["ci-wait", "--repo", "lbrmi/skills", "--pr", "5"], fa),
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).status).toBe("clean");
+  });
+
+  test("ci-wait failing via CLI -> exit 1", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setChecks("lbrmi/skills", 5, "failing");
+    const r = await capture(() =>
+      main(["ci-wait", "--repo", "lbrmi/skills", "--pr", "5", "--timeout", "60"], fa),
+    );
+    expect(r.code).toBe(1);
+    expect(JSON.parse(r.stdout).status).toBe("failing");
+  });
+
+  test("sweep --dry-run via CLI touches nothing", async () => {
+    const fa = new FakeAdapter([]);
+    fa.setWorktrees("/work/sk_main", [
+      { path: "/work/sk_main/.yard/worktrees/yd-sk-issue-10", branch: "yd/sk/issue-10" },
+    ]);
+    fa.seedIssues("lbrmi/skills", [
+      { number: 10, title: "x", state: "CLOSED", labels: ["phase:done"], body: "" },
+    ]);
+    const r = await capture(() =>
+      main(
+        ["sweep", "--repo", "lbrmi/skills", "--repo-dir", "/work/sk_main", "--code", "sk", "--dry-run"],
+        fa,
+      ),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.summary.removed).toBe(1);
+    expect(fa.removeWorktreeCalls.length).toBe(0);
+  });
+
   const REG_FILE = "/home/test/.yard/config/projects/demo.yml";
   const REG = `repos:
   skills:
