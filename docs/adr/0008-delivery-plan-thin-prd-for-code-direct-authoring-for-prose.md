@@ -1,0 +1,12 @@
+# Delivery: thin PRD for the CLI, direct authoring for skills/prompts
+
+The work that builds this design is two different kinds, and routing both through the same tracker pipeline would be ceremony in one place and under-tracking in the other.
+
+The `yard` Bun CLI is real software: multi-file, testable, with a build order (handler core → Zod schemas → subcommands → MCP entry → tests) and parallelisable slices. It gets a **thin PRD plus dependency-ordered child issues**. Thin means the PRD *links* ADRs 0003/0006/0007 as the spec and lists only the build order and slice boundaries — it does not restate requirements, because re-deriving what the ADRs already fix would duplicate the source of truth and invite drift (the project's own truth-flow rule).
+
+The `/ship` skill, the phase prompts, the `setup-yard` merge, and the `review` promotion/re-wire are **authored markdown**: no CI, no tests, no dependency graph, no parallelism, approved by a human reading them. They are written directly, not sliced into tracked issues. The grill plus ADRs 0002–0007 already constitute their full spec; a PRD over prose with nothing to test or merge-gate adds process without benefit. At most a single visibility tracking issue, never a slice breakdown.
+
+Two consequences fixed by this split:
+
+- **Bootstrap order.** `/ship` cannot be built by `/ship` (it does not exist yet). The first build is by hand or with the current `ship-prd`. The `yard` CLI is built first because the skills call it; the skills/prompts are authored on top of a working `yard`.
+- **No PRD restates an ADR.** PRDs and issues created here reference the ADRs for rationale and carry only acceptance criteria and ordering. The ADRs remain the single durable spec; the tracker is a checklist over them, not a second copy.

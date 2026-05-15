@@ -1,0 +1,19 @@
+# Branch, release, and merge model
+
+`/ship` drives work across **versioned release lines**, not a single `main`. The branch hierarchy and who is allowed to merge at each boundary:
+
+| Branch | Form | Merges into | PR opened by | PR merged by |
+|---|---|---|---|---|
+| Issue | `yd/<code>/issue-N` | its feature branch | agent | **agent** (no human) |
+| Feature | `<line>-<featname>` (feature name chosen by the agent) | its release line | agent | **human** |
+| Release line | `1.0.x`, `2.3.x`, … (long-lived, many at once) | next release line (forward-merge) | agent | agent if clean, else human |
+
+**Branch-rename is the Agent's first git action.** `isolation: "worktree"` assigns an auto-generated branch name (`worktree-agent-<hash>` or similar). Before any commit, the Agent must run `git branch -m <auto-name> yd/<code>/issue-N`. The whole convention — filtering yard-opened PRs, force-push safety, the `{code}_{line}` and `yd/<code>/issue-N` naming everything else relies on — breaks if the auto-name leaks into a commit or PR head ref. `yard dispatch-init` returns the expected branch name; the Agent renames to it first thing.
+
+The two gates from ADR 0004 map onto the two human/agent boundaries: the **change gate** is the agent-merged issue→feature boundary; the **intent gate** (dedicated review + full test suite) runs before the agent opens the feature→main PR, and a **human performs the merge**. The agent must never merge feature→main even when review and tests are green; it opens the PR, emits a terminal `AWAITING_HUMAN_MERGE` signal, and stops. `/goal` treats that signal as loop-terminal, otherwise the loop spins forever waiting on a human.
+
+**Cascade is asymmetric and this must not be reversed.** A fix landing on a release line is **merge-forwarded** up the lines (prod → stage → dev, i.e. lower version → higher) so newer releases never regress by losing a fix. A feature built for a newer line is **never** auto-merged backward into an older prod line. Forward-merge hops carry the *same reviewed commits* — a `git merge`/cherry-pick, not a re-implementation and not a re-review. A clean hop with green tests is agent-merged with no human and no second dedicated review; a conflicting or test-failing hop goes HITL labelled with the exact failing hop.
+
+**No milestones.** Work maps to releases via a `target:<line>` label, and to features via the existing PRD parent link. Milestones were rejected: a GitHub issue holds exactly one milestone, but the cascade puts one fix in several lines at once — single-slot milestones break that outright. The `target:` label is also consistent with the labels-are-state rule (ADR 0003); `yard scope` computes release/feature progress without a parallel milestone system.
+
+**Conflict policy.** Before opening any PR the agent syncs the target first (rebase issue→feature; merge main→feature, never rewrite a shared branch) so conflicts surface in the worktree where the agent has full context, never as a dead PR. When a target moves after a PR exists, resolution follows a severity split mirroring the review model: trivial/mechanical conflicts (lockfiles, imports, generated files, formatting) are agent-resolved; a **semantic** conflict triggers a bounded context-gathering protocol — the conflicting hunks' history and commit messages, the two colliding issues/PRDs, related PRs touching those hunks, and only the ADRs/CONTEXT touching those files — after which the agent may resolve it. The resolution is treated as new logic: it must pass the full test suite *and* a dedicated review on the resolution diff, and the agent must record its merge rationale in the PR body for auditability. Only a failed gate or low-confidence attempt falls back to HITL. The goal is to make HITL the bounded fallback after a real attempt, not the reflex to the word "semantic." On a feature→main PR a semantic conflict is HITL by definition, since a human is already the merger there.
