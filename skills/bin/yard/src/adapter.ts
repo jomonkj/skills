@@ -9,8 +9,9 @@
  * Hard rule: nothing in this file (or anywhere in yard) calls an LLM. Only
  * `git`, `gh`, filesystem, JSON/YAML.
  */
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile, rename, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
+import { dirname } from "node:path";
 
 export interface ExecResult {
   /** Process exit code. 0 = success. */
@@ -64,6 +65,18 @@ export interface Adapter {
   listFiles(dir: string): Promise<string[]>;
   /** The current user's home dir — so `~/.yard/...` is mockable in tests. */
   homeDir(): string;
+
+  /**
+   * Atomically write `content` to `path` (tmp file + rename so no half-writes).
+   * Creates parent directories as needed.
+   */
+  writeFile(path: string, content: string): Promise<void>;
+
+  /**
+   * Run a git command in `dir` (e.g. `["add", "-A"]`).
+   * Throws with a clear message if the command exits non-zero.
+   */
+  runGit(dir: string, args: string[]): Promise<void>;
 }
 
 /** Run a subprocess and capture its result. The only place yard shells out. */
@@ -216,5 +229,31 @@ export class GhAdapter implements Adapter {
 
   homeDir(): string {
     return homedir();
+  }
+
+  async writeFile(path: string, content: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    // Atomic: write to a tmp file then rename so readers never see a partial.
+    const tmp = path + ".yard-tmp-" + process.pid;
+    try {
+      await writeFile(tmp, content, "utf8");
+      await rename(tmp, path);
+    } catch (err) {
+      // Best-effort cleanup.
+      try {
+        const { unlink } = await import("node:fs/promises");
+        await unlink(tmp);
+      } catch {}
+      throw err;
+    }
+  }
+
+  async runGit(dir: string, args: string[]): Promise<void> {
+    const r = await run(["git", "-C", dir, ...args]);
+    if (r.code !== 0) {
+      throw new Error(
+        `git -C ${dir} ${args.join(" ")} failed: ${r.stderr.trim() || r.stdout.trim()}`,
+      );
+    }
   }
 }

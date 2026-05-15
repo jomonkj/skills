@@ -17,10 +17,40 @@ export type { InitResult } from "./handlers/init.ts";
 export { issueCreate } from "./handlers/issue-create.ts";
 export type { IssueCreateResult } from "./handlers/issue-create.ts";
 export {
+  projectAdd,
+  repoAdd,
+  lineAdd,
+  lineRm,
+  envSet,
+  depAdd,
+  depRm,
+  projectSync,
+  defaultRegistryFile as registryMutateDefaultFile,
+} from "./handlers/registry-mutate.ts";
+export type {
+  MutateResult,
+  ProjectAddResult,
+  RepoAddResult,
+  LineAddResult,
+  LineRmResult,
+  EnvSetResult,
+  DepAddResult,
+  DepRmResult,
+  ProjectSyncResult,
+} from "./handlers/registry-mutate.ts";
+export {
   labelsEnsureInput,
   registryReadInput,
   initInput,
   issueCreateInput,
+  projectAddInput,
+  repoAddInput,
+  lineAddInput,
+  lineRmInput,
+  envSetInput,
+  depAddInput,
+  depRmInput,
+  projectSyncInput,
   OUTPUT_VERSION,
 } from "./schema.ts";
 export type {
@@ -28,6 +58,14 @@ export type {
   RegistryReadInput,
   InitInput,
   IssueCreateInput,
+  ProjectAddInput,
+  RepoAddInput,
+  LineAddInput,
+  LineRmInput,
+  EnvSetInput,
+  DepAddInput,
+  DepRmInput,
+  ProjectSyncInput,
 } from "./schema.ts";
 export {
   registrySchema,

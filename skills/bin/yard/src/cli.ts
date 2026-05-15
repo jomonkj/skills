@@ -17,7 +17,30 @@ import { labelsEnsure } from "./handlers/labels-ensure.ts";
 import { registryRead } from "./handlers/registry-read.ts";
 import { init } from "./handlers/init.ts";
 import { issueCreate } from "./handlers/issue-create.ts";
-import { labelsEnsureInput, registryReadInput, initInput, issueCreateInput } from "./schema.ts";
+import {
+  projectAdd,
+  repoAdd,
+  lineAdd,
+  lineRm,
+  envSet,
+  depAdd,
+  depRm,
+  projectSync,
+} from "./handlers/registry-mutate.ts";
+import {
+  labelsEnsureInput,
+  registryReadInput,
+  initInput,
+  issueCreateInput,
+  projectAddInput,
+  repoAddInput,
+  lineAddInput,
+  lineRmInput,
+  envSetInput,
+  depAddInput,
+  depRmInput,
+  projectSyncInput,
+} from "./schema.ts";
 import { emitYaml, type Json } from "./yaml.ts";
 
 const EXIT_OK = 0;
@@ -64,11 +87,26 @@ function emit(value: Json, format: "json" | "yaml"): void {
 const USAGE = `yard — deterministic git/gh/label plumbing (ADR 0003)
 
 Usage:
-  yard labels-ensure --repo <owner/name> --set triage|yard|all [--dry-run] [--format json|yaml]
-  yard registry-read (--file <path> | --project <name>) [--format json|yaml]
-  yard init --from <yard-config-url> --profile <name> [--format json|yaml]
-  yard issue-create  --repo <owner/name> --title <title> [--body <text>] [--label <name>]...
-                     [--parent <N>] [--ensure-set triage|yard|all|none] [--dry-run] [--format json|yaml]
+  yard labels-ensure  --repo <owner/name> --set triage|yard|all [--dry-run] [--format json|yaml]
+  yard registry-read  (--file <path> | --project <name>) [--format json|yaml]
+  yard init           --from <yard-config-url> --profile <name> [--format json|yaml]
+  yard issue-create   --repo <owner/name> --title <title> [--body <text>] [--label <name>]...
+                      [--parent <N>] [--ensure-set triage|yard|all|none] [--dry-run] [--format json|yaml]
+
+Registry mutators — the ONLY writers of the yard-config registry (ADR 0006).
+Never hand-edit registry YAML; use these commands instead:
+  yard project add    --project <name> [--file <path>] [--format json|yaml]
+  yard repo add       --project <name> --key <dotted-key> --code <code> --url <url>
+                      --line <name> [--protected] [--env <tag>] [--format json|yaml]
+  yard line add       --project <name> --repo <key> --line <name> [--protected] [--env <tag>]
+                      [--format json|yaml]
+  yard line rm        --project <name> --repo <key> --line <name> [--format json|yaml]
+  yard env set        --project <name> --repo <key> --line <name> --env <tag> [--format json|yaml]
+  yard dep add        --project <name> --repo <key> --dep-repo <repo> --dep-line <line>
+                      [--dep-project <project>] [--format json|yaml]
+  yard dep rm         --project <name> --repo <key> --dep-repo <repo>
+                      [--dep-project <project>] [--format json|yaml]
+  yard project sync   [--project <name>] [--message <msg>] [--format json|yaml]
 
 Global:
   --format json|yaml   output format (default: json)
@@ -210,6 +248,213 @@ export async function main(
         return EXIT_ERR;
       }
     }
+    // ── Registry mutators (ADR 0006) ────────────────────────────────────────
+    // The registry YAML is never hand-edited. Only these subcommands write it.
+
+    case "project": {
+      const sub = rest[0];
+      const subFlags = parseFlags(rest.slice(1));
+      const subFormat = subFlags.format === "yaml" ? "yaml" : "json";
+
+      if (sub === "add") {
+        const parsed = projectAddInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await projectAdd(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`project-add: ${result.file} ${result.changed ? "created" : "already present (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      if (sub === "sync") {
+        const parsed = projectSyncInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          message: typeof subFlags.message === "string" ? subFlags.message : "yard: project sync",
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await projectSync(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`project-sync: ${result.committed ? `committed + pushed (${result.message})` : "nothing to commit (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      log(`unknown subcommand: project ${sub ?? ""}`);
+      log(""); log(USAGE); return EXIT_USAGE;
+    }
+
+    case "repo": {
+      const sub = rest[0];
+      const subFlags = parseFlags(rest.slice(1));
+      const subFormat = subFlags.format === "yaml" ? "yaml" : "json";
+
+      if (sub === "add") {
+        const parsed = repoAddInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+          key: typeof subFlags.key === "string" ? subFlags.key : undefined,
+          code: typeof subFlags.code === "string" ? subFlags.code : undefined,
+          url: typeof subFlags.url === "string" ? subFlags.url : undefined,
+          line: typeof subFlags.line === "string" ? subFlags.line : undefined,
+          protected: subFlags.protected === true,
+          env: typeof subFlags.env === "string" ? subFlags.env : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await repoAdd(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`repo-add: ${parsed.data.key} ${result.changed ? "added" : "already present (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      log(`unknown subcommand: repo ${sub ?? ""}`);
+      log(""); log(USAGE); return EXIT_USAGE;
+    }
+
+    case "line": {
+      const sub = rest[0];
+      const subFlags = parseFlags(rest.slice(1));
+      const subFormat = subFlags.format === "yaml" ? "yaml" : "json";
+
+      if (sub === "add") {
+        const parsed = lineAddInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+          repo: typeof subFlags.repo === "string" ? subFlags.repo : undefined,
+          line: typeof subFlags.line === "string" ? subFlags.line : undefined,
+          protected: subFlags.protected === true,
+          env: typeof subFlags.env === "string" ? subFlags.env : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await lineAdd(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`line-add: ${parsed.data.line} in ${parsed.data.repo} ${result.changed ? "added" : "already present (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      if (sub === "rm") {
+        const parsed = lineRmInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+          repo: typeof subFlags.repo === "string" ? subFlags.repo : undefined,
+          line: typeof subFlags.line === "string" ? subFlags.line : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await lineRm(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`line-rm: ${parsed.data.line} from ${parsed.data.repo} ${result.changed ? "removed" : "absent (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      log(`unknown subcommand: line ${sub ?? ""}`);
+      log(""); log(USAGE); return EXIT_USAGE;
+    }
+
+    case "env": {
+      const sub = rest[0];
+      const subFlags = parseFlags(rest.slice(1));
+      const subFormat = subFlags.format === "yaml" ? "yaml" : "json";
+
+      if (sub === "set") {
+        const parsed = envSetInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+          repo: typeof subFlags.repo === "string" ? subFlags.repo : undefined,
+          line: typeof subFlags.line === "string" ? subFlags.line : undefined,
+          env: typeof subFlags.env === "string" ? subFlags.env : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await envSet(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`env-set: ${parsed.data.line} in ${parsed.data.repo} env="${parsed.data.env}" ${result.changed ? "updated" : "already set (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      log(`unknown subcommand: env ${sub ?? ""}`);
+      log(""); log(USAGE); return EXIT_USAGE;
+    }
+
+    case "dep": {
+      const sub = rest[0];
+      const subFlags = parseFlags(rest.slice(1));
+      const subFormat = subFlags.format === "yaml" ? "yaml" : "json";
+
+      if (sub === "add") {
+        const parsed = depAddInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+          repo: typeof subFlags.repo === "string" ? subFlags.repo : undefined,
+          depRepo: typeof subFlags["dep-repo"] === "string" ? subFlags["dep-repo"] : undefined,
+          depLine: typeof subFlags["dep-line"] === "string" ? subFlags["dep-line"] : undefined,
+          depProject: typeof subFlags["dep-project"] === "string" ? subFlags["dep-project"] : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await depAdd(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`dep-add: ${parsed.data.depRepo}@${parsed.data.depLine} in ${parsed.data.repo} ${result.changed ? "added" : "already present (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      if (sub === "rm") {
+        const parsed = depRmInput.safeParse({
+          project: typeof subFlags.project === "string" ? subFlags.project : undefined,
+          file: typeof subFlags.file === "string" ? subFlags.file : undefined,
+          repo: typeof subFlags.repo === "string" ? subFlags.repo : undefined,
+          depRepo: typeof subFlags["dep-repo"] === "string" ? subFlags["dep-repo"] : undefined,
+          depProject: typeof subFlags["dep-project"] === "string" ? subFlags["dep-project"] : undefined,
+        });
+        if (!parsed.success) {
+          log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+          log(""); log(USAGE); return EXIT_USAGE;
+        }
+        try {
+          const result = await depRm(parsed.data, adapter);
+          emit(result as unknown as Json, subFormat);
+          log(`dep-rm: ${parsed.data.depRepo} from ${parsed.data.repo} ${result.changed ? "removed" : "absent (no-op)"}`);
+          return EXIT_OK;
+        } catch (err) { log("error: " + (err instanceof Error ? err.message : String(err))); return EXIT_ERR; }
+      }
+
+      log(`unknown subcommand: dep ${sub ?? ""}`);
+      log(""); log(USAGE); return EXIT_USAGE;
+    }
+
     default:
       log(`unknown command: ${command}`);
       log("");

@@ -6,6 +6,10 @@
  * any file path is nested under it. `cloneRepo` is simulated by a callback the
  * test supplies (it seeds files under the clone dir), so `init` is fully
  * testable without git or the network.
+ *
+ * `writeFile` updates `this.files` in place — tests read back via `files.get()`.
+ * `runGit` records every call to `gitCalls[]` — tests can assert the exact git
+ * operations without shelling out.
  */
 import type { Adapter, GhIssue, GhLabel } from "../src/adapter.ts";
 
@@ -22,6 +26,9 @@ export class FakeAdapter implements Adapter {
   /** Test hook: called on cloneRepo to seed files under `dir`. */
   onClone?: (url: string, dir: string, fa: FakeAdapter) => void;
   home = "/home/test";
+
+  /** Records all `runGit` calls in order. */
+  gitCalls: { dir: string; args: string[] }[] = [];
 
   constructor(initial: GhLabel[] = []) {
     this.labels = new Map(initial.map((l) => [l.name, { ...l }]));
@@ -97,5 +104,13 @@ export class FakeAdapter implements Adapter {
 
   homeDir(): string {
     return this.home;
+  }
+
+  async writeFile(path: string, content: string): Promise<void> {
+    this.files.set(path, content);
+  }
+
+  async runGit(dir: string, args: string[]): Promise<void> {
+    this.gitCalls.push({ dir, args: [...args] });
   }
 }

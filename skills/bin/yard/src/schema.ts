@@ -36,6 +36,107 @@ export const initInput = z.object({
 });
 export type InitInput = z.infer<typeof initInput>;
 
+// ── Registry mutator inputs (ADR 0006) ─────────────────────────────────────
+//
+// All registry writes go through these validated inputs. The registry YAML is
+// NEVER hand-edited — only `yard` commands write it (ADR 0006, "operational
+// rules"). Deterministic output (stable key order, canonical YAML) ensures
+// clean diffs and merges.
+
+/** `yard project add --project <name>` */
+export const projectAddInput = z.object({
+  /** Project dir basename, e.g. `yolo-hq`. */
+  project: z.string().min(1, "--project <name> is required"),
+  /** Path to the project's YAML file (optional; defaults to the standard path). */
+  file: z.string().min(1).optional(),
+});
+export type ProjectAddInput = z.infer<typeof projectAddInput>;
+
+/** `yard repo add --project <name> --key <dotted-key> --code <code> --url <url> --line <name> [--protected] [--env <tag>]` */
+export const repoAddInput = z.object({
+  project: z.string().min(1, "--project <name> is required"),
+  file: z.string().min(1).optional(),
+  /** Dotted dir key, e.g. `apps.libromi`. */
+  key: z
+    .string()
+    .regex(
+      /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/,
+      "repo key must be a dotted dir path (e.g. apps.libromi)",
+    ),
+  code: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "code must be a lowercase identifier"),
+  url: z.string().min(1, "--url is required"),
+  /** Initial release line name, e.g. `main`. */
+  line: z.string().min(1, "--line <name> is required"),
+  protected: z.boolean().default(false),
+  env: z.string().min(1).optional(),
+});
+export type RepoAddInput = z.infer<typeof repoAddInput>;
+
+/** `yard line add --project <name> --repo <key> --line <name> [--protected] [--env <tag>]` */
+export const lineAddInput = z.object({
+  project: z.string().min(1, "--project <name> is required"),
+  file: z.string().min(1).optional(),
+  /** Dotted repo key. */
+  repo: z.string().min(1, "--repo <key> is required"),
+  line: z.string().min(1, "--line <name> is required"),
+  protected: z.boolean().default(false),
+  env: z.string().min(1).optional(),
+});
+export type LineAddInput = z.infer<typeof lineAddInput>;
+
+/** `yard line rm --project <name> --repo <key> --line <name>` */
+export const lineRmInput = z.object({
+  project: z.string().min(1, "--project <name> is required"),
+  file: z.string().min(1).optional(),
+  repo: z.string().min(1, "--repo <key> is required"),
+  line: z.string().min(1, "--line <name> is required"),
+});
+export type LineRmInput = z.infer<typeof lineRmInput>;
+
+/** `yard env set --project <name> --repo <key> --line <name> --env <tag>` */
+export const envSetInput = z.object({
+  project: z.string().min(1, "--project <name> is required"),
+  file: z.string().min(1).optional(),
+  repo: z.string().min(1, "--repo <key> is required"),
+  line: z.string().min(1, "--line <name> is required"),
+  env: z.string().min(1, "--env <tag> is required"),
+});
+export type EnvSetInput = z.infer<typeof envSetInput>;
+
+/** `yard dep add --project <name> --repo <key> --dep-repo <repo> --dep-line <line> [--dep-project <project>]` */
+export const depAddInput = z.object({
+  project: z.string().min(1, "--project <name> is required"),
+  file: z.string().min(1).optional(),
+  /** Repo key that depends on another. */
+  repo: z.string().min(1, "--repo <key> is required"),
+  depRepo: z.string().min(1, "--dep-repo <repo> is required"),
+  depLine: z.string().min(1, "--dep-line <line> is required"),
+  depProject: z.string().min(1).optional(),
+});
+export type DepAddInput = z.infer<typeof depAddInput>;
+
+/** `yard dep rm --project <name> --repo <key> --dep-repo <repo> [--dep-project <project>]` */
+export const depRmInput = z.object({
+  project: z.string().min(1, "--project <name> is required"),
+  file: z.string().min(1).optional(),
+  repo: z.string().min(1, "--repo <key> is required"),
+  depRepo: z.string().min(1, "--dep-repo <repo> is required"),
+  depProject: z.string().min(1).optional(),
+});
+export type DepRmInput = z.infer<typeof depRmInput>;
+
+/** `yard project sync [--project <name>] [--message <msg>]` */
+export const projectSyncInput = z.object({
+  /** Project dir basename. When omitted syncs all changes in the config repo. */
+  project: z.string().min(1).optional(),
+  /** Commit message. Defaults to "yard: project sync". */
+  message: z.string().min(1).default("yard: project sync"),
+  file: z.string().min(1).optional(),
+});
+export type ProjectSyncInput = z.infer<typeof projectSyncInput>;
+
 export const issueCreateInput = z.object({
   /** `owner/name`. */
   repo: z.string().min(1, "repo is required (owner/name)"),

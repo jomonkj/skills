@@ -176,4 +176,112 @@ describe("CLI transport", () => {
     expect(r.code).toBe(2);
     expect(r.stderr).toContain("usage error");
   });
+
+  // ── Registry mutator CLI transport tests ──────────────────────────────────
+
+  test("project add: argv -> handler -> versioned JSON stdout", async () => {
+    const fa = new FakeAdapter([]);
+    fa.home = "/home/test";
+    const r = await capture(() =>
+      main(["project", "add", "--project", "yolo-hq"], fa),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("project-add");
+    expect(parsed.changed).toBe(true);
+    expect(r.stderr).toContain("created");
+  });
+
+  test("repo add: argv -> handler -> versioned JSON stdout", async () => {
+    const fa = new FakeAdapter([]);
+    fa.home = "/home/test";
+    // Pre-create the project file.
+    fa.files.set("/home/test/.yard/config/projects/yolo-hq.yml", "repos: {}\n");
+    const r = await capture(() =>
+      main([
+        "repo", "add",
+        "--project", "yolo-hq",
+        "--key", "apps.libromi",
+        "--code", "lbr",
+        "--url", "git@github.com:lbrmi/libromi.git",
+        "--line", "main",
+        "--protected",
+        "--env", "prod",
+      ], fa),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.command).toBe("repo-add");
+    expect(parsed.changed).toBe(true);
+  });
+
+  test("line add + line rm round-trip via CLI", async () => {
+    const fa = new FakeAdapter([]);
+    fa.home = "/home/test";
+    fa.files.set("/home/test/.yard/config/projects/yolo-hq.yml",
+      `repos:\n  yolo:\n    code: yo\n    url: u\n    lines:\n      main:\n        protected: true\n`,
+    );
+    const addR = await capture(() =>
+      main(["line", "add", "--project", "yolo-hq", "--repo", "yolo", "--line", "0.x"], fa),
+    );
+    expect(addR.code).toBe(0);
+    expect(JSON.parse(addR.stdout).changed).toBe(true);
+
+    const rmR = await capture(() =>
+      main(["line", "rm", "--project", "yolo-hq", "--repo", "yolo", "--line", "0.x"], fa),
+    );
+    expect(rmR.code).toBe(0);
+    expect(JSON.parse(rmR.stdout).changed).toBe(true);
+  });
+
+  test("env set via CLI", async () => {
+    const fa = new FakeAdapter([]);
+    fa.home = "/home/test";
+    fa.files.set("/home/test/.yard/config/projects/yolo-hq.yml",
+      `repos:\n  yolo:\n    code: yo\n    url: u\n    lines:\n      main:\n        protected: false\n`,
+    );
+    const r = await capture(() =>
+      main(["env", "set", "--project", "yolo-hq", "--repo", "yolo", "--line", "main", "--env", "prod"], fa),
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).changed).toBe(true);
+  });
+
+  test("dep add + dep rm round-trip via CLI", async () => {
+    const fa = new FakeAdapter([]);
+    fa.home = "/home/test";
+    fa.files.set("/home/test/.yard/config/projects/yolo-hq.yml",
+      `repos:\n  yolo:\n    code: yo\n    url: u\n    lines:\n      main:\n        protected: false\n  apps.libromi:\n    code: lbr\n    url: u2\n    lines:\n      main:\n        protected: false\n`,
+    );
+    const addR = await capture(() =>
+      main(["dep", "add", "--project", "yolo-hq", "--repo", "apps.libromi", "--dep-repo", "yolo", "--dep-line", "main"], fa),
+    );
+    expect(addR.code).toBe(0);
+    expect(JSON.parse(addR.stdout).changed).toBe(true);
+
+    const rmR = await capture(() =>
+      main(["dep", "rm", "--project", "yolo-hq", "--repo", "apps.libromi", "--dep-repo", "yolo"], fa),
+    );
+    expect(rmR.code).toBe(0);
+    expect(JSON.parse(rmR.stdout).changed).toBe(true);
+  });
+
+  test("project sync commits via CLI", async () => {
+    const fa = new FakeAdapter([]);
+    fa.home = "/home/test";
+    fa.files.set("/home/test/.yard/config/x.yml", "repos: {}\n");
+    const r = await capture(() =>
+      main(["project", "sync", "--message", "yard: test sync"], fa),
+    );
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.committed).toBe(true);
+    expect(r.stderr).toContain("committed");
+  });
+
+  test("unknown registry subcommand -> exit 2", async () => {
+    const fa = new FakeAdapter([]);
+    const r = await capture(() => main(["project", "frobnicate"], fa));
+    expect(r.code).toBe(2);
+  });
 });
