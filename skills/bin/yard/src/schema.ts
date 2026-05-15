@@ -255,3 +255,92 @@ export const doctorInput = z.object({
   fix: z.boolean().default(false),
 });
 export type DoctorInput = z.infer<typeof doctorInput>;
+
+// ── Ship-only: dispatch lifecycle (ADR 0003/0005/0007) ─────────────────────
+
+/**
+ * `yard dispatch-init` — atomically claim a slice and materialise its
+ * worktree. The single atomic `gh issue edit --add-label phase:implementing
+ * --remove-label phase:queued` IS the lease (ADR 0003/0007). Idempotent:
+ * re-running on a slice this caller already owns reuses the worktree.
+ */
+export const dispatchInitInput = z.object({
+  /** `owner/name` of the repo holding the issue. */
+  repo: z.string().min(1, "--repo <owner/name> is required"),
+  /** Issue number to dispatch. */
+  issue: z.number().int().positive(),
+  /** Per-repo short code (from the registry) — used in branch/worktree names. */
+  code: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "--code must be a lowercase identifier"),
+  /** Absolute path to the line clone dir the worktree is created from. */
+  repoDir: z.string().min(1, "--repo-dir <path> is required"),
+  /** Base ref the worktree branches from (e.g. `main`). */
+  base: z.string().min(1).default("main"),
+});
+export type DispatchInitInput = z.infer<typeof dispatchInitInput>;
+
+/** Terminal outcomes a slice can reach (ADR 0007). */
+export const dispatchOutcomeEnum = z.enum([
+  "merged",
+  "awaiting-human-merge",
+  "hitl",
+  "failed",
+]);
+export type DispatchOutcome = z.infer<typeof dispatchOutcomeEnum>;
+
+/**
+ * `yard dispatch-done` — record a slice's terminal outcome with one atomic
+ * label move and (for merged/closed) tear the worktree down. Protected-branch
+ * guard is enforced before any branch delete.
+ */
+export const dispatchDoneInput = z.object({
+  repo: z.string().min(1, "--repo <owner/name> is required"),
+  issue: z.number().int().positive(),
+  code: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "--code must be a lowercase identifier"),
+  repoDir: z.string().min(1, "--repo-dir <path> is required"),
+  /** Terminal outcome to record. */
+  outcome: dispatchOutcomeEnum,
+  /** Extra per-project protected-branch regexes (registry-supplied). */
+  protectedPatterns: z.array(z.string()).default([]),
+});
+export type DispatchDoneInput = z.infer<typeof dispatchDoneInput>;
+
+/**
+ * `yard ci-wait` — bounded poll of a PR's checks. HARD wall-clock cap so the
+ * `/goal` loop can never hang (ADR 0007: "a hung wait stalls the whole
+ * unattended run"). No checks configured => CLEAN.
+ */
+export const ciWaitInput = z.object({
+  repo: z.string().min(1, "--repo <owner/name> is required"),
+  /** PR number to watch. */
+  pr: z.number().int().positive(),
+  /** Poll interval seconds. Default 30. */
+  intervalSec: z.number().int().positive().default(30),
+  /** HARD timeout seconds (wall clock). Default 900 (15 min). */
+  timeoutSec: z.number().int().positive().default(900),
+});
+export type CiWaitInput = z.infer<typeof ciWaitInput>;
+
+/**
+ * `yard sweep` — GC orphaned issue worktrees/branches whose issue is
+ * merged/closed. KEEPS `phase:failed`/`phase:hitl` for inspection and NEVER
+ * deletes a protected branch (ADR 0006/0007).
+ */
+export const sweepInput = z.object({
+  /** `owner/name` whose issues classify the worktrees. */
+  repo: z.string().min(1, "--repo <owner/name> is required"),
+  /** Absolute path to the line clone dir whose worktrees are swept. */
+  repoDir: z.string().min(1, "--repo-dir <path> is required"),
+  /** Per-repo short code — only `yd-<code>-issue-N` worktrees are touched. */
+  code: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "--code must be a lowercase identifier"),
+  /** Extra per-project protected-branch regexes (registry-supplied). */
+  protectedPatterns: z.array(z.string()).default([]),
+  /** Report what would be swept without removing anything. */
+  dryRun: z.boolean().default(false),
+});
+export type SweepInput = z.infer<typeof sweepInput>;

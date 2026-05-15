@@ -75,6 +75,43 @@ const YARD_LABELS: CanonicalLabel[] = [
     color: "CCCCCC",
     description: "Bottom of queue",
   },
+  // ── Phase / lifecycle labels (ADR 0005 / 0007) ──────────────────────────
+  // Labels-are-state (ADR 0003): a slice's lifecycle phase IS a label, never
+  // a side file. `phase:implementing` doubles as the dispatch lease — its
+  // most-recent apply time drives the 2h stale-lock reclaim (ADR 0007).
+  // Names referenced verbatim by ship-prd/SKILL.md and ADR 0007; yard is the
+  // single source for their colours/descriptions.
+  {
+    name: "phase:queued",
+    color: "FEF2C0",
+    description: "Slice is ready and waiting for dispatch",
+  },
+  {
+    name: "phase:implementing",
+    color: "1D76DB",
+    description:
+      "Slice is dispatched and in flight — this label is the dispatch lease (2h stale-reclaim, ADR 0007)",
+  },
+  {
+    name: "phase:awaiting-human-merge",
+    color: "0E8A16",
+    description: "Feature PR open, green — a human performs the merge (ADR 0005)",
+  },
+  {
+    name: "phase:hitl",
+    color: "B60205",
+    description: "Escalation exhausted — human intervention required (ADR 0007)",
+  },
+  {
+    name: "phase:failed",
+    color: "D93F0B",
+    description: "Slice failed terminally within its tier budget (ADR 0007)",
+  },
+  {
+    name: "phase:done",
+    color: "0E8A16",
+    description: "Slice merged and complete",
+  },
 ];
 
 /**
