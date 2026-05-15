@@ -205,3 +205,53 @@ export const depsInput = z.object({
   state: issueStateEnum.default("open"),
 });
 export type DepsInput = z.infer<typeof depsInput>;
+
+/**
+ * `yard ensure <scope>` — deterministic, AI-free clone+checkout of exactly
+ * the repos/lines a scope needs from the registry, into `{code}_{line}` dirs
+ * (ADR 0006). Idempotent: present+correct clones are left untouched.
+ *
+ * Scope reading (ADR 0006 is silent on per-issue lines; issues carry no line
+ * tag): a scope resolves to issues, each in a repo; ensure materialises EVERY
+ * registry-declared line of each in-scope repo, plus the transitive `needs`
+ * of those lines. This is what `doctor` reconciles against, so the two agree
+ * by construction. Cited in handlers/ensure.ts.
+ */
+export const ensureInput = z.object({
+  /** Scope expression (same grammar as `scope`/`deps`). */
+  expr: z.string().min(1, "scope expression is required"),
+  /** Registry file (passed through to registry-read). */
+  file: z.string().min(1).optional(),
+  /** Project name to derive the registry file + clone destination. */
+  project: z.string().min(1, "--project <name> is required"),
+  /** Profile name -> `~/.yard/profile.<name>.yml`; gives the path root. */
+  profile: z.string().min(1, "--profile <name> is required"),
+  /** Default repo (`owner/name`) for a bare `issue:#N` expr. */
+  repo: z.string().min(1).optional(),
+  /** Issue state filter for scope resolution. Default "open". */
+  state: issueStateEnum.default("open"),
+  /**
+   * Re-clone a present-but-drifted line dir (wrong remote/branch) instead of
+   * only reporting it. Off by default: ensure never destroys a divergent
+   * working tree silently (ADR 0006: "never silently diverges").
+   */
+  force: z.boolean().default(false),
+});
+export type EnsureInput = z.infer<typeof ensureInput>;
+
+/**
+ * `yard doctor` — reconcile registry (intent) vs filesystem (reality) for a
+ * project, report drift, never silently diverge (ADR 0006). Report-only by
+ * default; `--fix` re-clones missing/drifted line dirs.
+ */
+export const doctorInput = z.object({
+  /** Registry file (passed through to registry-read). */
+  file: z.string().min(1).optional(),
+  /** Project name to derive the registry file + clone destination. */
+  project: z.string().min(1, "--project <name> is required"),
+  /** Profile name -> `~/.yard/profile.<name>.yml`; gives the path root. */
+  profile: z.string().min(1, "--profile <name> is required"),
+  /** When true, re-clone missing/drifted line dirs. Off = report only. */
+  fix: z.boolean().default(false),
+});
+export type DoctorInput = z.infer<typeof doctorInput>;

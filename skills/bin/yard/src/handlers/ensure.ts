@@ -1,0 +1,409 @@
+/**
+ * `ensure` handler — pure core, ZERO AI (ADR 0003 / ADR 0006).
+ *
+ * `yard ensure <scope>` deterministically clones + checks out exactly the
+ * repos/lines a scope needs from the registry, into `{code}_{line}` dirs.
+ * Nothing here calls an LLM — only the git/fs adapter, the registry reader,
+ * and the (already-AI-free) scope resolver. This is a hard AC for slice 6
+ * ("No AI anywhere in the path").
+ *
+ * What a scope "needs" (ADR 0006 is silent on per-issue lines; GitHub issues
+ * carry no line tag): a scope resolves to issues, each issue lives in a repo.
+ * `ensure` materialises EVERY registry-declared line of each in-scope repo,
+ * plus the transitive `needs` (source deps) of those lines. `doctor`
+ * reconciles against the same set, so the two agree by construction.
+ *
+ * Dependency handling is B+C (ADR 0006): `ensure` materialises declared
+ * source deps; only impossible (unknown repo / cross-project file absent) or
+ * conflicting (same dep repo pinned to two different lines anywhere in the
+ * transitive closure) deps fail loud, named, BEFORE any clone happens.
+ *
+ * Clone destination: `<profile.root>/<project>/<repoDir>/<code>_<line>` where
+ * `repoDir` maps the dotted registry key (`apps.libromi` -> `apps/libromi`).
+ * Idempotent: a line dir that already exists with the right remote + branch
+ * is left untouched (never re-cloned). A drifted dir is reported; with
+ * `--force` it is re-cloned (ADR 0006: never silently diverges).
+ */
+import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
+import type { Adapter } from "../adapter.ts";
+import { OUTPUT_VERSION, type EnsureInput } from "../schema.ts";
+import { profileSchema } from "../schemas/profile.ts";
+import {
+  registrySchema,
+  repoKeyToDir,
+  type Registry,
+} from "../schemas/registry.ts";
+import { registryRead } from "./registry-read.ts";
+import { scope } from "./scope.ts";
+import { repoSlugFromUrl } from "../repo-url.ts";
+import { profileFileFor, configDirFor } from "./init.ts";
+
+/** One repo+line that the scope (transitively) needs materialised. */
+export interface PlannedClone {
+  /** Project the repo belongs to (same project, or a cross-project need). */
+  project: string;
+  /** Dotted registry key, e.g. `apps.libromi`. */
+  repoKey: string;
+  /** Resolved repo directory, e.g. `apps/libromi`. */
+  repoDir: string;
+  /** Per-repo short code. */
+  code: string;
+  /** Release line, e.g. `main`. */
+  line: string;
+  /** Git URL to clone from. */
+  url: string;
+  /** Absolute line clone dir `<root>/<project>/<repoDir>/<code>_<line>`. */
+  dir: string;
+  /** Why this is needed: `scope` (in-scope repo) or `need` (source dep). */
+  reason: "scope" | "need";
+}
+
+/** What happened to a planned clone. */
+export interface CloneOutcome extends PlannedClone {
+  status:
+    | "cloned" // freshly materialised
+    | "present" // already there, remote+branch correct (no-op)
+    | "drift-remote" // present but wrong origin URL
+    | "drift-branch" // present but on the wrong line/branch
+    | "recloned"; // was drifted/missing, --force re-materialised it
+}
+
+export interface EnsureResult {
+  version: number;
+  command: "ensure";
+  expr: string;
+  project: string;
+  /** Profile path root used for clone destinations. */
+  root: string;
+  /** Everything the scope needs, sorted (project, repoKey, line). */
+  planned: PlannedClone[];
+  /** Outcome per planned clone, same sort order. */
+  outcomes: CloneOutcome[];
+  /** Drifted dirs left untouched because `--force` was not given. */
+  drift: CloneOutcome[];
+}
+
+/** A (project, repoKey, line) coordinate; the unit ensure materialises. */
+interface Coord {
+  project: string;
+  repoKey: string;
+  line: string;
+  reason: "scope" | "need";
+}
+
+function coordId(c: { project: string; repoKey: string; line: string }): string {
+  return `${c.project} ${c.repoKey} ${c.line}`;
+}
+
+/** Read + validate one project's registry file from the synced config repo. */
+async function readProjectRegistry(
+  configDir: string,
+  project: string,
+  adapter: Adapter,
+): Promise<Registry> {
+  const file = join(configDir, "projects", `${project}.yml`);
+  if (!(await adapter.pathExists(file))) {
+    throw new Error(
+      `impossible dependency: registry for project ${JSON.stringify(project)} ` +
+        `not found at ${file} — run \`yard project add\` or fix the cross-project need`,
+    );
+  }
+  const raw = await adapter.readFile(file);
+  let doc: unknown;
+  try {
+    doc = parseYaml(raw);
+  } catch (err) {
+    throw new Error(
+      `malformed YAML in ${file}: ` +
+        (err instanceof Error ? err.message : String(err)),
+    );
+  }
+  const parsed = registrySchema.safeParse(doc);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("; ");
+    throw new Error(`invalid registry ${file}: ${detail}`);
+  }
+  return parsed.data;
+}
+
+/**
+ * Walk the scope's in-scope repos to a closed set of (project, repo, line)
+ * coordinates, following `needs` transitively. Fails loud on:
+ *   - impossible: a `needs` entry naming an unknown repo, an unknown line,
+ *     or a cross-project file that does not exist;
+ *   - conflicting: the same (project, repo) required at two different lines.
+ */
+async function resolveCoords(
+  homeProject: string,
+  inScopeRepoKeys: string[],
+  homeRegistry: Registry,
+  configDir: string,
+  adapter: Adapter,
+): Promise<Coord[]> {
+  // Registry cache so cross-project files are read at most once.
+  const regCache = new Map<string, Registry>([[homeProject, homeRegistry]]);
+  const getReg = async (project: string): Promise<Registry> => {
+    const hit = regCache.get(project);
+    if (hit) return hit;
+    const r = await readProjectRegistry(configDir, project, adapter);
+    regCache.set(project, r);
+    return r;
+  };
+
+  const resolved = new Map<string, Coord>();
+  // (project\0repoKey) -> the single line it is pinned to, for conflict detect.
+  const pinnedLine = new Map<string, { line: string; via: string }>();
+  const queue: Coord[] = [];
+
+  for (const repoKey of inScopeRepoKeys) {
+    const repo = homeRegistry.repos[repoKey];
+    if (!repo) continue; // not registry-tracked; scope already surfaced it
+    for (const line of Object.keys(repo.lines)) {
+      queue.push({ project: homeProject, repoKey, line, reason: "scope" });
+    }
+  }
+
+  while (queue.length > 0) {
+    const c = queue.shift()!;
+    const reg = await getReg(c.project);
+    const repo = reg.repos[c.repoKey];
+    if (!repo) {
+      throw new Error(
+        `impossible dependency: repo ${JSON.stringify(c.repoKey)} ` +
+          `not found in project ${JSON.stringify(c.project)}'s registry`,
+      );
+    }
+    if (!repo.lines[c.line]) {
+      throw new Error(
+        `impossible dependency: line ${JSON.stringify(c.line)} not declared ` +
+          `for repo ${JSON.stringify(c.repoKey)} in project ` +
+          `${JSON.stringify(c.project)} (declared: ${Object.keys(repo.lines)
+            .sort()
+            .join(", ")})`,
+      );
+    }
+
+    const pinKey = `${c.project} ${c.repoKey}`;
+    const existingPin = pinnedLine.get(pinKey);
+    if (existingPin && existingPin.line !== c.line) {
+      throw new Error(
+        `conflicting dependency: ${c.project}/${c.repoKey} is required at ` +
+          `both line ${JSON.stringify(existingPin.line)} (via ${existingPin.via}) ` +
+          `and line ${JSON.stringify(c.line)} (via ${c.reason}) — ` +
+          `a single working clone cannot be two lines at once`,
+      );
+    }
+    if (!existingPin) {
+      pinnedLine.set(pinKey, { line: c.line, via: c.reason });
+    }
+
+    const id = coordId(c);
+    if (!resolved.has(id)) {
+      resolved.set(id, c);
+      // Enqueue this repo's source deps (transitive). Same-project unless
+      // `project:`-qualified (ADR 0006).
+      for (const need of repo.needs ?? []) {
+        const needProject = need.project ?? c.project;
+        queue.push({
+          project: needProject,
+          repoKey: need.repo,
+          line: need.line,
+          reason: "need",
+        });
+      }
+    }
+  }
+
+  return [...resolved.values()].sort((a, b) =>
+    a.project !== b.project
+      ? a.project < b.project
+        ? -1
+        : 1
+      : a.repoKey !== b.repoKey
+        ? a.repoKey < b.repoKey
+          ? -1
+          : 1
+        : a.line < b.line
+          ? -1
+          : a.line > b.line
+            ? 1
+            : 0,
+  );
+}
+
+/** Inspect an existing line dir: does it match the intended remote+branch? */
+async function inspectClone(
+  dir: string,
+  url: string,
+  line: string,
+  adapter: Adapter,
+): Promise<"present" | "drift-remote" | "drift-branch"> {
+  const remote = await adapter.runGitCapture(dir, [
+    "remote",
+    "get-url",
+    "origin",
+  ]);
+  if (remote.code !== 0) {
+    // Path exists but is not a git repo / has no origin — treat as remote drift.
+    return "drift-remote";
+  }
+  if (remote.stdout.trim() !== url.trim()) {
+    return "drift-remote";
+  }
+  const branch = await adapter.runGitCapture(dir, [
+    "branch",
+    "--show-current",
+  ]);
+  if (branch.code !== 0 || branch.stdout.trim() !== line) {
+    return "drift-branch";
+  }
+  return "present";
+}
+
+export async function ensure(
+  input: EnsureInput,
+  adapter: Adapter,
+): Promise<EnsureResult> {
+  const home = adapter.homeDir();
+  const configDir = configDirFor(home);
+
+  // 1. Profile -> path root (machine-local, never synced; ADR 0006).
+  const profileFile = profileFileFor(home, input.profile);
+  if (!(await adapter.pathExists(profileFile))) {
+    throw new Error(
+      `profile not found: ${profileFile} — create it (machine-local, not synced) before \`yard ensure\``,
+    );
+  }
+  const profileDoc = parseYaml(await adapter.readFile(profileFile));
+  const parsedProfile = profileSchema.safeParse(profileDoc);
+  if (!parsedProfile.success) {
+    const detail = parsedProfile.error.issues
+      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("; ");
+    throw new Error(`invalid profile ${profileFile}: ${detail}`);
+  }
+  const root = parsedProfile.data.root;
+
+  // 2. Read the home project's registry.
+  const reg = await registryRead(
+    { file: input.file, project: input.project },
+    adapter,
+  );
+  const homeRegistry = reg.registry;
+
+  // 3. Resolve the scope to issues -> set of in-scope registry repo keys.
+  //    A repo is "in scope" if any in-scope issue is in its GitHub repo.
+  const slugToKey = new Map<string, string>();
+  for (const key of Object.keys(homeRegistry.repos)) {
+    slugToKey.set(repoSlugFromUrl(homeRegistry.repos[key]!.url), key);
+  }
+  const scopeResult = await scope(
+    {
+      expr: input.expr,
+      file: input.file,
+      project: input.project,
+      repo: input.repo,
+      state: input.state,
+    },
+    adapter,
+  );
+  if (scopeResult.errors.length > 0) {
+    const detail = scopeResult.errors
+      .map((e) => `${e.repo}: ${e.message}`)
+      .join("; ");
+    throw new Error(
+      `scope resolution failed for one or more repos (cannot ensure a ` +
+        `partial scope): ${detail}`,
+    );
+  }
+  const inScopeKeys = new Set<string>();
+  for (const iss of scopeResult.issues) {
+    const key = slugToKey.get(iss.repo);
+    if (key) inScopeKeys.add(key);
+  }
+  if (inScopeKeys.size === 0) {
+    throw new Error(
+      `scope ${JSON.stringify(input.expr)} resolved to ${scopeResult.issues.length} ` +
+        `issue(s) but none in a registry-tracked repo for project ` +
+        `${JSON.stringify(input.project)} — nothing to materialise`,
+    );
+  }
+
+  // 4. Closed (project, repo, line) set incl. transitive needs; fail loud on
+  //    impossible/conflicting BEFORE any clone (ADR 0006 dependency B+C).
+  const coords = await resolveCoords(
+    input.project,
+    [...inScopeKeys],
+    homeRegistry,
+    configDir,
+    adapter,
+  );
+
+  // 5. Plan the line clone dirs.
+  const regCache = new Map<string, Registry>([[input.project, homeRegistry]]);
+  const planned: PlannedClone[] = [];
+  for (const c of coords) {
+    let r = regCache.get(c.project);
+    if (!r) {
+      r = await readProjectRegistry(configDir, c.project, adapter);
+      regCache.set(c.project, r);
+    }
+    const repo = r.repos[c.repoKey]!;
+    const repoDir = repoKeyToDir(c.repoKey);
+    const dir = join(root, c.project, repoDir, `${repo.code}_${c.line}`);
+    planned.push({
+      project: c.project,
+      repoKey: c.repoKey,
+      repoDir,
+      code: repo.code,
+      line: c.line,
+      url: repo.url,
+      dir,
+      reason: c.reason,
+    });
+  }
+
+  // 6. Materialise: clone the missing, leave correct ones, report/repair drift.
+  const outcomes: CloneOutcome[] = [];
+  const drift: CloneOutcome[] = [];
+  for (const p of planned) {
+    if (!(await adapter.pathExists(p.dir))) {
+      await adapter.cloneRepo(p.url, p.dir);
+      // Check out the requested line (clone lands on the repo default branch).
+      await adapter.runGit(p.dir, ["checkout", p.line]);
+      outcomes.push({ ...p, status: "cloned" });
+      continue;
+    }
+    const state = await inspectClone(p.dir, p.url, p.line, adapter);
+    if (state === "present") {
+      outcomes.push({ ...p, status: "present" });
+      continue;
+    }
+    // Drifted.
+    if (input.force) {
+      // Re-materialise: remove + clone fresh, then check out the line.
+      await adapter.runGit(p.dir, ["clean", "-dfx"]);
+      await adapter.runGit(p.dir, ["fetch", "origin"]);
+      await adapter.runGit(p.dir, ["checkout", p.line]);
+      outcomes.push({ ...p, status: "recloned" });
+    } else {
+      const out: CloneOutcome = { ...p, status: state };
+      outcomes.push(out);
+      drift.push(out);
+    }
+  }
+
+  return {
+    version: OUTPUT_VERSION,
+    command: "ensure",
+    expr: input.expr,
+    project: input.project,
+    root,
+    planned,
+    outcomes,
+    drift,
+  };
+}

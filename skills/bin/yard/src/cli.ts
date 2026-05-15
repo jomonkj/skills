@@ -29,6 +29,8 @@ import {
 } from "./handlers/registry-mutate.ts";
 import { scope } from "./handlers/scope.ts";
 import { deps, CycleError } from "./handlers/deps.ts";
+import { ensure } from "./handlers/ensure.ts";
+import { doctor } from "./handlers/doctor.ts";
 import {
   labelsEnsureInput,
   registryReadInput,
@@ -44,6 +46,8 @@ import {
   projectSyncInput,
   scopeInput,
   depsInput,
+  ensureInput,
+  doctorInput,
 } from "./schema.ts";
 import { emitYaml, type Json } from "./yaml.ts";
 
@@ -112,6 +116,11 @@ Usage:
                       [--state open|closed|all] [--format json|yaml]
   yard deps  <expr>   [--file <path> | --project <name>] [--repo <owner/name>]
                       [--state open|closed|all] [--format json|yaml]
+  yard ensure <expr>  --project <name> --profile <name> [--file <path>]
+                      [--repo <owner/name>] [--state open|closed|all] [--force]
+                      [--format json|yaml]
+  yard doctor         --project <name> --profile <name> [--file <path>] [--fix]
+                      [--format json|yaml]
 
   <expr> is one of:  prd:  |  label:<name>  |  issue:owner/repo#N  |  issue:#N  |  all
 
@@ -538,6 +547,73 @@ export async function main(
           log("error: " + err.message);
           return EXIT_ERR;
         }
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "ensure": {
+      const exprArg = leadingPositional(rest);
+      const stateFlag =
+        typeof flags.state === "string" ? flags.state : "open";
+      const parsed = ensureInput.safeParse({
+        expr: exprArg,
+        file: typeof flags.file === "string" ? flags.file : undefined,
+        project: typeof flags.project === "string" ? flags.project : undefined,
+        profile: typeof flags.profile === "string" ? flags.profile : undefined,
+        repo: typeof flags.repo === "string" ? flags.repo : undefined,
+        state: stateFlag,
+        force: flags.force === true,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await ensure(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        const cloned = result.outcomes.filter((o) => o.status === "cloned").length;
+        const present = result.outcomes.filter((o) => o.status === "present").length;
+        const recloned = result.outcomes.filter((o) => o.status === "recloned").length;
+        log(
+          `ensure: ${result.planned.length} planned, ${cloned} cloned, ` +
+            `${present} present, ${recloned} re-cloned, ` +
+            `${result.drift.length} drifted (unfixed)`,
+        );
+        // Unrepaired drift is a non-fatal warning, not a hard error: the
+        // operator must consciously re-run with --force (ADR 0006: never
+        // silently diverge, but also never destroy a tree without consent).
+        return EXIT_OK;
+      } catch (err) {
+        log("error: " + (err instanceof Error ? err.message : String(err)));
+        return EXIT_ERR;
+      }
+    }
+    case "doctor": {
+      const parsed = doctorInput.safeParse({
+        file: typeof flags.file === "string" ? flags.file : undefined,
+        project: typeof flags.project === "string" ? flags.project : undefined,
+        profile: typeof flags.profile === "string" ? flags.profile : undefined,
+        fix: flags.fix === true,
+      });
+      if (!parsed.success) {
+        log("usage error: " + parsed.error.issues.map((i) => i.message).join("; "));
+        log("");
+        log(USAGE);
+        return EXIT_USAGE;
+      }
+      try {
+        const result = await doctor(parsed.data, adapter);
+        emit(result as unknown as Json, format);
+        const unfixed = result.drift.filter((d) => !d.fixed).length;
+        log(
+          `doctor: ${result.ok} ok, ${result.drift.length} drift item(s)` +
+            (result.fixed ? ` (${result.drift.length - unfixed} fixed)` : "") +
+            (unfixed > 0 ? ` — ${unfixed} need attention` : ""),
+        );
+        return EXIT_OK;
+      } catch (err) {
         log("error: " + (err instanceof Error ? err.message : String(err)));
         return EXIT_ERR;
       }
