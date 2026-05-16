@@ -22,6 +22,8 @@ If you want to keep up with changes to these skills, and any new ones I create, 
 
 [Sign Up To The Newsletter](https://www.aihero.dev/s/skills-newsletter)
 
+> **New to the ship workflow?** Setting up a fresh Mac to design → `/ship` → `/goal` work? Start here: **[ONBOARDING.md](./ONBOARDING.md)** — clean machine to a verified `/ship --plan`, step by step. The Quickstart below is only for adding skills to an existing agent.
+
 ## Quickstart (30-second setup)
 
 1. Run the skills.sh installer:
@@ -150,6 +152,7 @@ Skills I use daily for code work.
 - **[grill-with-docs](./skills/engineering/grill-with-docs/SKILL.md)** — Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates `CONTEXT.md` and ADRs inline.
 - **[triage](./skills/engineering/triage/SKILL.md)** — Triage issues through a state machine of triage roles.
 - **[improve-codebase-architecture](./skills/engineering/improve-codebase-architecture/SKILL.md)** — Find deepening opportunities in a codebase, informed by the domain language in `CONTEXT.md` and the decisions in `docs/adr/`.
+- **[onboard](./skills/engineering/onboard/SKILL.md)** — One-command new-developer onboarding (macOS): verify system tools (fail loud, never install), build the `yard` CLI, create the machine-local profile, `yard init` against the registry, verify. Run once after the manual bootstrap in [ONBOARDING.md](./ONBOARDING.md).
 - **[setup-yard](./skills/engineering/setup-yard/SKILL.md)** — One-time per-repo onboarding into the ship workflow: register the project via the `yard` CLI, ensure canonical labels through `yard labels-ensure` (single source), scaffold `CONTEXT.md`/ADR docs. `--triage` does the lightweight triage-only scaffold. Merged form of the old setup-yard + setup-yolo-skills. Idempotent.
 - **[ship](./skills/engineering/ship/SKILL.md)** — Execute a Yard-ready PRD/scope end-to-end on the deterministic `yard` CLI: resolve scope → dispatch unblocked slices to parallel worktree subagents (implement → self-review → dedicated review → merge-check → PR → CI → squash-merge) → deterministic run summary. `--plan` does a read-only pre-flight that emits the `/goal` command. Escalation sonnet→opus→HITL. Supersedes ship-prd.
 - **[ship-prd](./skills/engineering/ship-prd/SKILL.md)** — Transitional fallback, superseded by [ship](./skills/engineering/ship/SKILL.md). Yard-less PRD execution reading phase prompts from `yolo-hq/yard/prompts/`. Kept until `/ship` proves on a real PRD, then removed (ADR 0008).

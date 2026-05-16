@@ -56,6 +56,8 @@ Tier ladder **sonnet → opus → HITL** (ADR 0007; haiku is not an implementati
 
 Deterministic, terminal-state-complete. It is both the human report and the text `/goal`'s evaluator reads — so every in-scope unit MUST resolve to `merged | awaiting-human-merge | hitl | failed | blocked`, with: HITL items + reasons + links; conflicts (auto-resolved / semantic-with-rationale / HITL); forward-merge hop results; dedicated-review outcomes (pass / soft-followups-filed / hard-escalated); follow-up issues filed; and cost — tokens, $ estimate, wall time, dispatch count, escalations per tier. **Cost is summed from session/usage logs, never a last-message snapshot** (a prior yard metric bug undercounted ~128× by snapshotting — must not recur).
 
+The **final** run summary (every unit terminal) leads with `✅ GOAL MET — every in-scope unit terminal`, then the contract body, then a short tail: **deferred-by-design** items + **next action**. This marker is for the `/goal` evaluator (unambiguous yes) and a human scanning the transcript (ADR 0007). Not a separate report — a one-line-plus extension of the contract.
+
 ## Long tests
 
 Per-slice change gate runs only affected tests (fast, sync). Feature→release-line full suite is fired **async** (CI/background), PR sits behind a `tests-running` label, the loop moves on, a later turn reconciles → `AWAITING_HUMAN_MERGE` (green) or HITL (red). `yard ci-wait` is bounded; a multi-hour suite is fire-and-track via labels, never a blocking wait (a hung wait stalls the whole AFK run — ADR 0007).

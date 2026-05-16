@@ -8,6 +8,7 @@
     "./skills/engineering/triage",
     "./skills/engineering/improve-codebase-architecture",
     "./skills/engineering/setup-yard",
+    "./skills/engineering/onboard",
     "./skills/engineering/ship",
     "./skills/engineering/ship-prd",
     "./skills/engineering/review",
