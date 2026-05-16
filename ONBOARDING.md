@@ -25,11 +25,11 @@ cd yard
 gh auth login                          # GitHub.com, your account
 ```
 
-Then in Claude Code, install the plugin (this repo is a Claude Code plugin — marketplace + plugin both named `yolo-skills`):
+Then in Claude Code, install the plugin (this repo is a Claude Code plugin — marketplace + plugin both named `yard-skills`):
 
 ```
 /plugin marketplace add lbrmi/skills
-/plugin install yolo-skills@yolo-skills
+/plugin install yard-skills@yard-skills
 ```
 
 > Dir `yard`, repo `lbrmi/skills` — that mismatch is expected: the GitHub rename is deferred (ADR 0008). A fresh clone uses the destination path now; only the *existing* operator's clone move + the rename happen later, bundled.
